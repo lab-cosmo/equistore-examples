@@ -1,0 +1,7 @@
+jupyter
+ipykernel
+
+torch
+
+rascal @ https://github.com/lab-cosmo/librascal/archive/f45e6052e2ca5e3e5b62f1440a79b8da5eceec96.zip
+skcmosmo
