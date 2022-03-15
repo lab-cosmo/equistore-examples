@@ -3,6 +3,8 @@ import copy
 import numpy as np
 import torch
 
+import warnings
+
 import ase
 from rascal.representations import SphericalExpansion
 
@@ -87,15 +89,22 @@ class RascalSphericalExpansion:
             block_gradients = None
             gradient_samples = None
             if hypers["compute_gradients"]:
+                warnings.warn(
+                    "numpy/forward gradients are currently broken with librascal,"
+                    "please use rascaline instead"
+                )
+                # the code below is missing some of the gradient sample, making
+                # the forces not match the energy in a finite difference test
+
                 gradient_samples = []
                 block_gradients = []
                 for sample_i, (structure, center) in enumerate(samples):
-                    gradient_mask = np.apply_along_axis(
-                        lambda row: row[0] == structure
-                        and row[1] == center
-                        and row[4] == neighbor_species,
-                        axis=1,
-                        arr=grad_info,
+                    gradient_mask = np.logical_and(
+                        np.logical_and(
+                            grad_info[:, 0] == structure,
+                            grad_info[:, 1] == center,
+                        ),
+                        grad_info[:, 4] == neighbor_species,
                     )
 
                     for grad_index in np.where(gradient_mask)[0]:
@@ -110,17 +119,18 @@ class RascalSphericalExpansion:
 
                         block_gradients.append(block_gradient)
 
+                        structure = grad_info[grad_index, 0]
                         neighbor = global_to_per_structure_atom_id[
                             grad_info[grad_index, 2]
                         ]
-                        gradient_samples.append((sample_i, neighbor, 0))
-                        gradient_samples.append((sample_i, neighbor, 1))
-                        gradient_samples.append((sample_i, neighbor, 2))
+                        gradient_samples.append((sample_i, structure, neighbor, 0))
+                        gradient_samples.append((sample_i, structure, neighbor, 1))
+                        gradient_samples.append((sample_i, structure, neighbor, 2))
 
                 if len(gradient_samples) != 0:
                     block_gradients = np.concatenate(block_gradients)
                     gradient_samples = Labels(
-                        names=["sample", "atom", "spatial"],
+                        names=["sample", "structure", "atom", "spatial"],
                         values=np.vstack(gradient_samples).astype(np.int32),
                     )
                 else:
@@ -128,8 +138,8 @@ class RascalSphericalExpansion:
                         (0, components.shape[0], features.shape[0])
                     )
                     gradient_samples = Labels(
-                        names=["sample", "atom", "spatial"],
-                        values=np.zeros((0, 3), dtype=np.int32),
+                        names=["sample", "structure", "atom", "spatial"],
+                        values=np.zeros((0, 4), dtype=np.int32),
                     )
 
             # reset atom index (librascal uses a global atom index)
@@ -145,7 +155,7 @@ class RascalSphericalExpansion:
             )
 
             block = Block(
-                data=np.copy(block_data),
+                values=np.copy(block_data),
                 samples=samples,
                 components=components,
                 features=features,
@@ -303,7 +313,7 @@ class RascalSphericalExpansionTorch:
 
             blocks.append(
                 Block(
-                    data=block_data,
+                    values=block_data,
                     samples=samples,
                     components=components,
                     features=features,
