@@ -79,7 +79,7 @@ class RascalSphericalExpansion:
                 names=["structure", "center"],
                 values=np.copy(info[center_species_mask, :2]).astype(np.int32),
             )
-            symmetric = Labels(
+            components = Labels(
                 names=["spherical_harmonics_m"],
                 values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
@@ -125,7 +125,7 @@ class RascalSphericalExpansion:
                     )
                 else:
                     block_gradients = np.zeros(
-                        (0, symmetric.shape[0], features.shape[0])
+                        (0, components.shape[0], features.shape[0])
                     )
                     gradient_samples = Labels(
                         names=["sample", "atom", "spatial"],
@@ -147,7 +147,7 @@ class RascalSphericalExpansion:
             block = Block(
                 data=np.copy(block_data),
                 samples=samples,
-                symmetric=symmetric,
+                components=components,
                 features=features,
             )
 
@@ -296,7 +296,7 @@ class RascalSphericalExpansionTorch:
                 names=["structure", "center"],
                 values=np.copy(info[center_species_mask, :2]).astype(np.int32),
             )
-            symmetric = Labels(
+            components = Labels(
                 names=["spherical_harmonics_m"],
                 values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
@@ -305,7 +305,7 @@ class RascalSphericalExpansionTorch:
                 Block(
                     data=block_data,
                     samples=samples,
-                    symmetric=symmetric,
+                    components=components,
                     features=features,
                 )
             )
