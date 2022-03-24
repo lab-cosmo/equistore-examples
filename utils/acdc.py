@@ -23,7 +23,7 @@ def _mdict_2_mdesc(mdict, sparse_names, feature_names):
         sparse=Labels(names=sparse_names, values=np.asarray(list(mdict.keys()), dtype=np.int32) ),
         blocks = [
             Block(
-                data = np.asarray(list(b.values())).reshape(1,1,-1),
+                values = np.asarray(list(b.values())).reshape(1,1,-1),
                 components = Labels(["dummy"], np.zeros(shape=(1,1), dtype=np.int32) ),
                 samples = Labels(["dummy"],  np.zeros(shape=(1,1), dtype=np.int32)),
                 features = Labels(feature_names, np.asarray(list(b.keys()), dtype=np.int32) )   
@@ -166,8 +166,9 @@ def cg_combine(x_a, x_b, m_a=None, m_b=None, M=None, feature_names=None, clebsch
                 # determines parity of the block
                 S = sigma_a*sigma_b*(-1)**(lam_a+lam_b+L)
                 if M is not None:
-                    if (S,L,NU) not in M_dict:
+                    if (S,L,NU) not in M.sparse:
                         continue
+                    W_oth = M.block(sigma=S, lam=L, nu=NU)
                     W_block = M_dict[(S,L,NU)]                    
                 sel_feats = []
                 sel_weights = []                
@@ -242,7 +243,7 @@ def cg_combine(x_a, x_b, m_a=None, m_b=None, M=None, feature_names=None, clebsch
             block_data = block_data@A
         newblock= Block(
                         # feature index must be last
-                        data=block_data,
+                        values=block_data,
                         samples = samples,
                         components = Labels(["mu"],np.asarray(range(-L,L+1), dtype=np.int32).reshape(-1,1)),
                         features = Labels( feature_names,
@@ -441,13 +442,13 @@ def compress_features(x, threshold=None):
         A = sp.linalg.sqrtm(WW)
         Xt = Xt@A
         new_blocks.append( Block(
-                        data=Xt.reshape(block.values.shape[:2]+(-1,)),
+                        values=Xt.reshape(block.values.shape[:2]+(-1,)),
                         samples = block.samples,
                         components = block.components,
                         features = block.features[selection]
                           ) )
         new_A.append( Block(
-            data = A.T.reshape(1, nsel, nsel),
+            values = A.T.reshape(1, nsel, nsel),
             components = Labels( ["q_comp"], np.arange(nsel, dtype = np.int32).reshape(-1,1) ),
             samples =  Labels( ["dummy"], np.zeros(shape=(1,1), dtype = np.int32) ),
             features = block.features[selection],
