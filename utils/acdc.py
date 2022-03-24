@@ -212,7 +212,8 @@ def cg_combine(
                         if M is None:
                             w_X = 1.0
                         else:
-                            if IDX in W_block:
+                            # if IDX in W_block:
+                            if IDX in W_oth.features:
                                 if weights_are_matrix:
                                     w_X = 1.0
                                 else:
