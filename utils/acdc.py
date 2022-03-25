@@ -1,6 +1,7 @@
 import numpy as np
 from aml_storage import Labels, Block, Descriptor
 
+from utils.builder import DescriptorBuilder, BlockBuilderPerFeatures
 from utils.clebsh_gordan import ClebschGordanReal
 
 ###############################################################
@@ -293,6 +294,183 @@ def cg_combine(
     )
     return X
 
+def cg_combine_builder(
+    x_a, x_b, m_a=None, m_b=None, M=None, feature_names=None, clebsch_gordan=None, lcut=None
+):
+    """
+    Performs a CG product of two sets of equivariants. Only requirement is that
+    sparse indices are labeled as ("sigma", "lam", "nu"). The automatically-determined
+    naming of output features can be overridden by giving a list of "feature_names".
+    A dictionary of select_features (organized in the same blocks as the sparse indices,
+    each containing a dictionary of the feature indices and an associated multiplicity)
+    can also be specified to filter the features that should be selected.
+    """
+
+    # determines the cutoff in the new features
+    lmax_a = max(x_a.sparse["lam"])
+    lmax_b = max(x_b.sparse["lam"])
+    if lcut is None:
+        lcut = lmax_a + lmax_b
+    
+    # creates a CG object, if needed
+    if clebsch_gordan is None:
+        clebsch_gordan = ClebschGordanReal(lcut)
+
+    # assumes uniform nu in the descriptors
+    nu_a = x_a.sparse["nu"][0]
+    nu_b = x_b.sparse["nu"][0]
+
+    # block indexes for the incremented features
+    NU = nu_a + nu_b
+        
+    # NB : assumes the samples are matching. we could add some kind of
+    # validation, at least on size if not on content
+    samples = x_a.block(0).samples
+    if x_a.block(0).has_gradient("positions"):
+        grad_samples, _ = x_a.block(0).gradient("positions")
+        X_grads = {(S, L, NU): [] for L in range(lcut + 1) for S in [-1, 1]}
+    else:
+        grad_samples = None
+
+    # automatic generation of the output features names
+    # "x1 x2 x3 ; x1 x2 -> x1_a x2_a x3_a k_nu x1_b x2_b l_nu"
+    if feature_names is None:
+        feature_names = (
+            tuple(n + "_a" for n in x_a.block(0).features.names)
+            + ("k_" + str(NU),)
+            + tuple(n + "_b" for n in x_b.block(0).features.names)
+            + ("l_" + str(NU),)
+        )
+    
+    dbuilder = DescriptorBuilder(["sigma", "lam", "nu"], sample_names=samples.names, 
+                component_names=["nu"], feature_names= feature_names)
+    
+    # it's much easier (and faster) to manipulate these as dictionary of dictionaries
+    if M is not None:
+        weights_are_matrix = M.block(0).values.shape[1] > 1
+    else:
+        weights_are_matrix = False
+
+    # loops over sparse blocks of x_a
+    for index_a, block_a in x_a:
+        lam_a = index_a["lam"]
+        sigma_a = index_a["sigma"]
+
+        if m_a is not None:
+            w_block_a = m_a.block(index_a)
+            w_block_a_values = w_block_a.values
+            w_block_a_features = w_block_a.features
+        # and x_b
+        for index_b, block_b in x_b:
+            lam_b = index_b["lam"]
+            sigma_b = index_b["sigma"]
+            if m_b is not None:
+                w_block_b = m_b.block(index_b)
+                w_block_b_values = w_block_b.values
+                w_block_b_features = w_block_b.features
+
+            # loops over all permissible output blocks. note that blocks will
+            # be filled from different la, lb
+            for L in range(np.abs(lam_a - lam_b), 1 + min(lam_a + lam_b, lcut)):
+                # determines parity of the block
+                S = sigma_a * sigma_b * (-1) ** (lam_a + lam_b + L)
+                if M is not None:
+                    if (S, L, NU) not in M.sparse:
+                        continue
+                    W_block_features = M.block(sigma=S, lam=L, nu=NU).features
+                    W_block_values = M.block(sigma=S, lam=L, nu=NU).values                    
+                if (S,L,NU) not in dbuilder.blocks:
+                    dbuilder.add_block((S,L,NU), samples=samples, components=np.arange(-L,L+1,dtype=np.int32).reshape(-1,1))
+                dblock = dbuilder.blocks[(S,L,NU)]
+
+                sel_feats = []
+                sel_weights = []
+                sel_idx = []
+                # determines the features that are in the select list
+                for n_a in range(len(block_a.features)):
+                    f_a = tuple(block_a.features[n_a])
+                    w_a = 1.0 if m_a is None else w_block_a_values[0,0,w_block_a_features.position(f_a)]
+                    for n_b in range(len(block_b.features)):
+                        f_b = tuple(block_b.features[n_b])
+                        w_b = 1.0 if m_b is None else w_block_b_values[0,0,w_block_b_features.position(f_b)]
+
+                        # the index is assembled consistently with the scheme above
+                        IDX = f_a + (lam_a,) + f_b + (lam_b,)
+
+                        if M is None:
+                            w_X = 1.0
+                        else:
+                            IDX_pos = W_block_features.position(IDX)
+                            if IDX_pos is None:
+                                continue
+                            else:
+                                if weights_are_matrix:
+                                    w_X = 1.0
+                                else:
+                                    w_X = W_block_values[0,0,IDX_pos]
+                        sel_feats.append([n_a, n_b])
+                        sel_weights.append(w_X / (w_a * w_b))
+                        sel_idx.append(IDX)
+
+                if len(sel_feats) == 0:
+                    continue
+
+                sel_feats = np.asarray(sel_feats, dtype=int)                
+                sel_weights = np.asarray(sel_weights)
+                sel_idx = np.asarray(sel_idx)                
+
+                # builds all products in one go
+                one_shot_blocks = clebsch_gordan.combine_einsum(
+                    block_a.values[:, :, sel_feats[:, 0]],
+                    block_b.values[:, :, sel_feats[:, 1]],
+                    L,
+                    combination_string="iq,iq->iq",
+                )                
+
+                # do gradients, if they are present...
+                if grad_samples is not None:
+                    smp_a, grad_a = block_a.gradient("positions")
+                    smp_b, grad_b = block_b.gradient("positions")
+                    one_shot_grads = clebsch_gordan.combine_einsum(
+                        block_a.values[smp_a["sample"]][:, :, sel_feats[:, 0]],
+                        grad_b[:, :, sel_feats[:, 1]],
+                        L=L,
+                        combination_string="iq,iq->iq",
+                    ) + clebsch_gordan.combine_einsum(
+                        block_b.values[smp_b["sample"]][:, :, sel_feats[:, 1]],
+                        grad_a[:, :, sel_feats[:, 0]],
+                        L=L,
+                        combination_string="iq,iq->iq",
+                    )
+
+                    dblock.add_features(sel_idx, one_shot_blocks*sel_weights, one_shot_grads*sel_weights)  
+                else:
+                    dblock.add_features(sel_idx, one_shot_blocks*sel_weights)  
+
+    X = dbuilder.build()
+    return X
+
+def cg_increment_builder(x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None, lcut=None):
+    """Specialized version of the CG product to perform iterations with nu=1 features"""
+    nu = x_nu.sparse["nu"][0]
+    if nu == 1:
+        feature_names = ("n_1", "l_1", "n_2", "l_2")
+    else:
+        feature_names = tuple(x_nu.block(0).features.names) + (
+            "k_" + str(nu + 1),
+            "n_" + str(nu + 1),
+            "l_" + str(nu + 1),
+        )
+    return cg_combine_builder(
+        x_nu,
+        x_1,
+        m_nu,
+        m_1,
+        feature_names=feature_names,
+        M=M,
+        clebsch_gordan=clebsch_gordan,
+        lcut=lcut,
+    )
 
 def cg_increment(x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None, lcut=None):
     """Specialized version of the CG product to perform iterations with nu=1 features"""
