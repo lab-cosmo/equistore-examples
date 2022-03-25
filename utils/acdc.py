@@ -1,5 +1,4 @@
 import numpy as np
-import scipy as sp
 from aml_storage import Labels, Block, Descriptor
 
 from utils.clebsh_gordan import ClebschGordanReal
@@ -50,7 +49,7 @@ def features_norm(x):
 
 
 def features_count(x):
-    return np.sum([len(b.features) for i, b in x])
+    return np.sum([len(b.features)*(2*i["lam"]+1) for i, b in x])
 
 
 #################################################################
@@ -114,7 +113,7 @@ def full_product_indices(m_a, m_b, feature_names=None):
 
 
 def cg_combine(
-    x_a, x_b, m_a=None, m_b=None, M=None, feature_names=None, clebsch_gordan=None
+    x_a, x_b, m_a=None, m_b=None, M=None, feature_names=None, clebsch_gordan=None, lcut=None
 ):
     """
     Performs a CG product of two sets of equivariants. Only requirement is that
@@ -494,20 +493,25 @@ def threshold_indices(
     return _mdict_2_mdesc(M_dict, x_a.sparse.names, feature_names), thresh_norm
 
 
-def compress_features(x, threshold=None):
+def _matrix_sqrt(MMT):
+    eva, eve = np.linalg.eigh(MMT)
+    return (eve*np.sqrt(eva))@eve.T
+
+def compress_features(x, w=None, threshold=None):
     new_blocks = []
     new_idxs = []
     new_A = []
     for index, block in x:
         nfeats = block.values.shape[-1]
-
+        S, L, NU = tuple(index)
+        
         # makes a copy of the features
         X = block.values.reshape(-1, nfeats).copy()
         selection = []
         while len(selection) < nfeats:
             norm = (X**2).sum(axis=0)
             sel_idx = norm.argmax()
-            if norm[sel_idx] < threshold:
+            if norm[sel_idx]/(2*L+1) < threshold:
                 break
             sel_x = X[:, sel_idx] / np.sqrt(norm[sel_idx])
             selection.append(sel_idx)
@@ -518,10 +522,14 @@ def compress_features(x, threshold=None):
         if nsel == 0:
             continue
         new_idxs.append(tuple(index))
-        Xt = block.values.reshape(-1, nfeats)[:, selection]
+        Xt = block.values.reshape(-1, nfeats)[:, selection].copy()
+        if w is not None:
+            for i, s in enumerate(selection):
+                Xt[:,i] /= w.block(index).values[0,0,s]
+        
         W = np.linalg.pinv(Xt) @ block.values.reshape(-1, nfeats)
         WW = W @ W.T
-        A = sp.linalg.sqrtm(WW)
+        A = _matrix_sqrt(WW)
         Xt = Xt @ A
         new_blocks.append(
             Block(

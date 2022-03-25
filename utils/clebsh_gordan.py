@@ -75,7 +75,7 @@ class ClebschGordanReal:
         l1 = (rho1.shape[1] - 1) // 2
         l2 = (rho2.shape[1] - 1) // 2
         if L > self._l_max or l1 > self._l_max or l2 > self._l_max:
-            raise ValueError("Requested CG entry has not been precomputed")
+            raise ValueError("Requested CG entry ", (l1, l2, L), " has not been precomputed")
 
         n_items = rho1.shape[0]
         if rho1.shape[0] != rho2.shape[0]:
