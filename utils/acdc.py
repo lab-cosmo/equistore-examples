@@ -194,7 +194,7 @@ def cg_combine(
                 if M is not None:
                     if (S, L, NU) not in M.sparse:
                         continue
-                    W_oth = M.block(sigma=S, lam=L, nu=NU)
+                    W_oth_features = M.block(sigma=S, lam=L, nu=NU).features
                     W_block = M_dict[(S, L, NU)]
                 sel_feats = []
                 sel_weights = []
@@ -212,7 +212,7 @@ def cg_combine(
                         if M is None:
                             w_X = 1.0
                         else:
-                            if IDX in W_block:
+                            if IDX in W_oth_features:#IDX in W_block:
                                 if weights_are_matrix:
                                     w_X = 1.0
                                 else:

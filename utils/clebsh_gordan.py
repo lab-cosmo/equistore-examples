@@ -38,15 +38,16 @@ class ClebschGordanReal:
                     else:
                         rcg = np.imag(real_cg)
 
-                    new_cg = []
+                    new_cg = []                    
                     for M in range(2 * L + 1):
-                        cg_M = []
-                        for m1 in range(2 * l1 + 1):
-                            for m2 in range(2 * l2 + 1):
-                                if np.abs(rcg[m1, m2, M]) > 1e-15:
-                                    cg_M.append((m1, m2, rcg[m1, m2, M]))
-
+                        cg_nonzero = np.where(np.abs(rcg[:,:,M])>1e-15)                        
+                        cg_M = np.zeros( len(cg_nonzero[0]), 
+                                        dtype=[('m1','>i4'), ('m2','>i4'), ( 'cg', '>f8')] )
+                        cg_M["m1"] = cg_nonzero[0]
+                        cg_M["m2"] = cg_nonzero[1]
+                        cg_M["cg"] = rcg[cg_nonzero[0], cg_nonzero[1], M]
                         new_cg.append(cg_M)
+                        
                     self._cg[(l1, l2, L)] = new_cg
 
     def combine(self, rho1, rho2, L):
