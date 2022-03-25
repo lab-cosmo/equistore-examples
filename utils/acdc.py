@@ -128,8 +128,9 @@ def cg_combine(
     # determines the cutoff in the new features
     lmax_a = max(x_a.sparse["lam"])
     lmax_b = max(x_b.sparse["lam"])
-    lcut = lmax_a + lmax_b
-
+    if lcut is None:
+        lcut = lmax_a + lmax_b
+    
     # creates a CG object, if needed
     if clebsch_gordan is None:
         clebsch_gordan = ClebschGordanReal(lcut)
@@ -294,7 +295,7 @@ def cg_combine(
     return X
 
 
-def cg_increment(x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None):
+def cg_increment(x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None, lcut=None):
     """Specialized version of the CG product to perform iterations with nu=1 features"""
     nu = x_nu.sparse["nu"][0]
     if nu == 1:
@@ -313,6 +314,7 @@ def cg_increment(x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None):
         feature_names=feature_names,
         M=M,
         clebsch_gordan=clebsch_gordan,
+        lcut=lcut,
     )
 
 
