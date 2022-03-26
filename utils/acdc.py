@@ -655,8 +655,8 @@ def threshold_indices(
 
                     # we consider the threshold based on the mean value of the features that will be generated.
                     # this is consistent with the way we select when compressing after the fact.
-                    ab_norm = (bsz_a * bsz_b).sum() / nsamples / ((2*lam_a+1)*(2*lam_b+1))
-                    if ab_norm > sel_threshold:
+                    ab_norm = (bsz_a * bsz_b).sum()/ nsamples  
+                    if ab_norm/ ((2*lam_a+1)*(2*lam_b+1))  > sel_threshold:
                         for L in range(
                             np.abs(lam_a - lam_b), 1 + min(lam_a + lam_b, l_threshold)
                         ):
