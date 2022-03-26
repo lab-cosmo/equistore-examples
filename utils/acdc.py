@@ -689,7 +689,7 @@ def compress_features(x, w=None, threshold=None):
         while len(selection) < nfeats:
             norm = (X**2).sum(axis=0)
             sel_idx = norm.argmax()
-            if norm[sel_idx]/(2*L+1) < threshold:
+            if norm[sel_idx]/(2*L+1)/X.shape[0] < threshold:
                 break
             sel_x = X[:, sel_idx] / np.sqrt(norm[sel_idx])
             selection.append(sel_idx)
