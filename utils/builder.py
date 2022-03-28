@@ -27,10 +27,12 @@ class DescriptorBuilder:
         features = Labels(self._feature_names, features)
 
         block = Block(data, samples, components, features)
-        self.blocks[sparse]=block
+        self.blocks[tuple(sparse)] = block
         return block
 
-    def add_block(self, sparse, gradient_samples=None, *, samples=None, components, features=None):
+    def add_block(
+        self, sparse, gradient_samples=None, *, samples=None, components, features=None
+    ):
         if samples is None and features is None:
             raise Exception("can not have both samples & features unset")
 
@@ -61,14 +63,19 @@ class DescriptorBuilder:
             raise Exception("not implemented")
 
         if samples is not None:
-            block = BlockBuilderPerFeatures(samples, components, self._feature_names, gradient_samples)
+            block = BlockBuilderPerFeatures(
+                samples, components, self._feature_names, gradient_samples
+            )
 
-        self.blocks[sparse]=block
+        self.blocks[sparse] = block
         return block
 
     def build(self):
-        sparse = Labels(self._sparse_names, np.array(list(self.blocks.keys()), dtype=np.int32))
-        
+        sparse = Labels(
+            self._sparse_names,
+            np.array(list(self.blocks.keys()), dtype=np.int32),
+        )
+
         blocks = []
         for block in self.blocks.values():
             if isinstance(block, Block):
@@ -83,7 +90,7 @@ class DescriptorBuilder:
 
 
 class BlockBuilderPerFeatures:
-    def __init__(self, samples, components, feature_names, gradient_samples = None):
+    def __init__(self, samples, components, feature_names, gradient_samples=None):
         assert isinstance(samples, Labels)
         assert isinstance(components, Labels)
         assert (gradient_samples is None) or isinstance(gradient_samples, Labels)
@@ -109,7 +116,12 @@ class BlockBuilderPerFeatures:
 
         self._features.append(labels)
         self._data.append(data)
+
         if gradient is not None:
+            if len(gradient.shape) == 2:
+                gradient = gradient.reshape(gradient.shape[0], gradient.shape[1], 1)
+
+            assert gradient.shape[2] == labels.shape[0]
             self._gradient_data.append(gradient)
 
     def build(self):
@@ -122,8 +134,13 @@ class BlockBuilderPerFeatures:
         )
 
         if self._gradient_samples is not None:
-            block.add_gradient("positions", self._gradient_samples, np.concatenate(self._gradient_data, axis=-1))
+            block.add_gradient(
+                "positions",
+                self._gradient_samples,
+                np.concatenate(self._gradient_data, axis=2),
+            )
 
+        self._gradient_data = []
         self._data = []
         self._features = []
 

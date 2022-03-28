@@ -1,7 +1,7 @@
 import numpy as np
 from aml_storage import Labels, Block, Descriptor
 
-from utils.builder import DescriptorBuilder, BlockBuilderPerFeatures
+from utils.builder import DescriptorBuilder
 from utils.clebsh_gordan import ClebschGordanReal
 
 ###############################################################
@@ -50,7 +50,7 @@ def features_norm(x):
 
 
 def features_count(x):
-    return np.sum([len(b.features)*(2*i["lam"]+1) for i, b in x])
+    return np.sum([len(b.features) * (2 * i["lam"] + 1) for i, b in x])
 
 
 #################################################################
@@ -114,7 +114,14 @@ def full_product_indices(m_a, m_b, feature_names=None):
 
 
 def cg_combine(
-    x_a, x_b, m_a=None, m_b=None, M=None, feature_names=None, clebsch_gordan=None, lcut=None
+    x_a,
+    x_b,
+    m_a=None,
+    m_b=None,
+    M=None,
+    feature_names=None,
+    clebsch_gordan=None,
+    lcut=None,
 ):
     """
     Performs a CG product of two sets of equivariants. Only requirement is that
@@ -130,7 +137,7 @@ def cg_combine(
     lmax_b = max(x_b.sparse["lam"])
     if lcut is None:
         lcut = lmax_a + lmax_b
-    
+
     # creates a CG object, if needed
     if clebsch_gordan is None:
         clebsch_gordan = ClebschGordanReal(lcut)
@@ -294,8 +301,16 @@ def cg_combine(
     )
     return X
 
+
 def cg_combine_builder(
-    x_a, x_b, m_a=None, m_b=None, M=None, feature_names=None, clebsch_gordan=None, lcut=None
+    x_a,
+    x_b,
+    m_a=None,
+    m_b=None,
+    M=None,
+    feature_names=None,
+    clebsch_gordan=None,
+    lcut=None,
 ):
     """
     Performs a CG product of two sets of equivariants. Only requirement is that
@@ -311,7 +326,7 @@ def cg_combine_builder(
     lmax_b = max(x_b.sparse["lam"])
     if lcut is None:
         lcut = lmax_a + lmax_b
-    
+
     # creates a CG object, if needed
     if clebsch_gordan is None:
         clebsch_gordan = ClebschGordanReal(lcut)
@@ -322,13 +337,12 @@ def cg_combine_builder(
 
     # block indexes for the incremented features
     NU = nu_a + nu_b
-        
+
     # NB : assumes the samples are matching. we could add some kind of
     # validation, at least on size if not on content
     samples = x_a.block(0).samples
     if x_a.block(0).has_gradient("positions"):
         grad_samples, _ = x_a.block(0).gradient("positions")
-        X_grads = {(S, L, NU): [] for L in range(lcut + 1) for S in [-1, 1]}
     else:
         grad_samples = None
 
@@ -341,10 +355,14 @@ def cg_combine_builder(
             + tuple(n + "_b" for n in x_b.block(0).features.names)
             + ("l_" + str(NU),)
         )
-    
-    dbuilder = DescriptorBuilder(["sigma", "lam", "nu"], sample_names=samples.names, 
-                component_names=["nu"], feature_names= feature_names)
-    
+
+    builder = DescriptorBuilder(
+        ["sigma", "lam", "nu"],
+        sample_names=samples.names,
+        component_names=["nu"],
+        feature_names=feature_names,
+    )
+
     # it's much easier (and faster) to manipulate these as dictionary of dictionaries
     if M is not None:
         weights_are_matrix = M.block(0).values.shape[1] > 1
@@ -378,10 +396,14 @@ def cg_combine_builder(
                     if (S, L, NU) not in M.sparse:
                         continue
                     W_block_features = M.block(sigma=S, lam=L, nu=NU).features
-                    W_block_values = M.block(sigma=S, lam=L, nu=NU).values                    
-                if (S,L,NU) not in dbuilder.blocks:
-                    dbuilder.add_block((S,L,NU), samples=samples, components=np.arange(-L,L+1,dtype=np.int32).reshape(-1,1))
-                dblock = dbuilder.blocks[(S,L,NU)]
+                    W_block_values = M.block(sigma=S, lam=L, nu=NU).values
+                if (S, L, NU) not in builder.blocks:
+                    builder.add_block(
+                        (S, L, NU),
+                        samples=samples,
+                        components=np.arange(-L, L + 1, dtype=np.int32).reshape(-1, 1),
+                    )
+                block = builder.blocks[(S, L, NU)]
 
                 sel_feats = []
                 sel_weights = []
@@ -389,10 +411,20 @@ def cg_combine_builder(
                 # determines the features that are in the select list
                 for n_a in range(len(block_a.features)):
                     f_a = tuple(block_a.features[n_a])
-                    w_a = 1.0 if m_a is None else w_block_a_values[0,0,w_block_a_features.position(f_a)]
+                    w_a = (
+                        1.0
+                        if m_a is None
+                        else w_block_a_values[0, 0, w_block_a_features.position(f_a)]
+                    )
                     for n_b in range(len(block_b.features)):
                         f_b = tuple(block_b.features[n_b])
-                        w_b = 1.0 if m_b is None else w_block_b_values[0,0,w_block_b_features.position(f_b)]
+                        w_b = (
+                            1.0
+                            if m_b is None
+                            else w_block_b_values[
+                                0, 0, w_block_b_features.position(f_b)
+                            ]
+                        )
 
                         # the index is assembled consistently with the scheme above
                         IDX = f_a + (lam_a,) + f_b + (lam_b,)
@@ -407,7 +439,7 @@ def cg_combine_builder(
                                 if weights_are_matrix:
                                     w_X = 1.0
                                 else:
-                                    w_X = W_block_values[0,0,IDX_pos]
+                                    w_X = W_block_values[0, 0, IDX_pos]
                         sel_feats.append([n_a, n_b])
                         sel_weights.append(w_X / (w_a * w_b))
                         sel_idx.append(IDX)
@@ -415,9 +447,9 @@ def cg_combine_builder(
                 if len(sel_feats) == 0:
                     continue
 
-                sel_feats = np.asarray(sel_feats, dtype=int)                
+                sel_feats = np.asarray(sel_feats, dtype=int)
                 sel_weights = np.asarray(sel_weights)
-                sel_idx = np.asarray(sel_idx)                
+                sel_idx = np.asarray(sel_idx)
 
                 # builds all products in one go
                 one_shot_blocks = clebsch_gordan.combine_einsum(
@@ -425,7 +457,7 @@ def cg_combine_builder(
                     block_b.values[:, :, sel_feats[:, 1]],
                     L,
                     combination_string="iq,iq->iq",
-                )                
+                )
 
                 # do gradients, if they are present...
                 if grad_samples is not None:
@@ -443,14 +475,21 @@ def cg_combine_builder(
                         combination_string="iq,iq->iq",
                     )
 
-                    dblock.add_features(sel_idx, one_shot_blocks*sel_weights, one_shot_grads*sel_weights)  
+                    block.add_features(
+                        sel_idx,
+                        one_shot_blocks * sel_weights,
+                        one_shot_grads * sel_weights,
+                    )
                 else:
-                    dblock.add_features(sel_idx, one_shot_blocks*sel_weights)  
+                    block.add_features(sel_idx, one_shot_blocks * sel_weights)
 
-    X = dbuilder.build()
+    X = builder.build()
     return X
 
-def cg_increment_builder(x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None, lcut=None):
+
+def cg_increment_builder(
+    x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None, lcut=None
+):
     """Specialized version of the CG product to perform iterations with nu=1 features"""
     nu = x_nu.sparse["nu"][0]
     if nu == 1:
@@ -472,7 +511,10 @@ def cg_increment_builder(x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=
         lcut=lcut,
     )
 
-def cg_increment(x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None, lcut=None):
+
+def cg_increment(
+    x_nu, x_1, m_nu=None, m_1=None, M=None, clebsch_gordan=None, lcut=None
+):
     """Specialized version of the CG product to perform iterations with nu=1 features"""
     nu = x_nu.sparse["nu"][0]
     if nu == 1:
@@ -653,10 +695,11 @@ def threshold_indices(
                     W = w_a * w_b
                     IDX = f_a + (lam_a,) + f_b + (lam_b,)
 
-                    # we consider the threshold based on the mean value of the features that will be generated.
-                    # this is consistent with the way we select when compressing after the fact.
-                    ab_norm = (bsz_a * bsz_b).sum()/ nsamples  
-                    if ab_norm/ ((2*lam_a+1)*(2*lam_b+1))  > sel_threshold:
+                    # we consider the threshold based on the mean value of the
+                    # features that will be generated. this is consistent with
+                    # the way we select when compressing after the fact.
+                    ab_norm = (bsz_a * bsz_b).sum() / nsamples
+                    if ab_norm / ((2 * lam_a + 1) * (2 * lam_b + 1)) > sel_threshold:
                         for L in range(
                             np.abs(lam_a - lam_b), 1 + min(lam_a + lam_b, l_threshold)
                         ):
@@ -676,7 +719,8 @@ def threshold_indices(
 
 def _matrix_sqrt(MMT):
     eva, eve = np.linalg.eigh(MMT)
-    return (eve*np.sqrt(eva))@eve.T
+    return (eve * np.sqrt(eva)) @ eve.T
+
 
 def compress_features(x, w=None, threshold=None):
     new_blocks = []
@@ -685,14 +729,14 @@ def compress_features(x, w=None, threshold=None):
     for index, block in x:
         nfeats = block.values.shape[-1]
         S, L, NU = tuple(index)
-        
+
         # makes a copy of the features
         X = block.values.reshape(-1, nfeats).copy()
         selection = []
         while len(selection) < nfeats:
             norm = (X**2).sum(axis=0)
             sel_idx = norm.argmax()
-            if norm[sel_idx]/(2*L+1)/X.shape[0] < threshold:
+            if norm[sel_idx] / (2 * L + 1) / X.shape[0] < threshold:
                 break
             sel_x = X[:, sel_idx] / np.sqrt(norm[sel_idx])
             selection.append(sel_idx)
@@ -706,8 +750,8 @@ def compress_features(x, w=None, threshold=None):
         Xt = block.values.reshape(-1, nfeats)[:, selection].copy()
         if w is not None:
             for i, s in enumerate(selection):
-                Xt[:,i] /= w.block(index).values[0,0,s]
-        
+                Xt[:, i] /= w.block(index).values[0, 0, s]
+
         W = np.linalg.pinv(Xt) @ block.values.reshape(-1, nfeats)
         WW = W @ W.T
         A = _matrix_sqrt(WW)
