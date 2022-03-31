@@ -60,7 +60,9 @@ class DescriptorBuilder:
             features = Labels(self._feature_names, features)
 
         if features is not None:
-            raise Exception("not implemented")
+            block = BlockBuilderPerSamples(
+                features, components, self._sample_names, gradient_samples
+            )
 
         if samples is not None:
             block = BlockBuilderPerFeatures(
@@ -80,13 +82,79 @@ class DescriptorBuilder:
         for block in self.blocks.values():
             if isinstance(block, Block):
                 blocks.append(block)
-            else:
-                assert isinstance(block, BlockBuilderPerFeatures)
+            elif isinstance(block, BlockBuilderPerFeatures):
                 blocks.append(block.build())
+            elif isinstance(block, BlockBuilderPerSamples):
+                blocks.append(block.build())
+            else:
+                Exception("Invalid block type")
+
 
         self.blocks = {}
 
         return Descriptor(sparse, blocks)
+
+
+class BlockBuilderPerSamples:
+    def __init__(self, features, components, sample_names, gradient_samples=None):
+        assert isinstance(features, Labels)
+        assert isinstance(components, Labels)
+        assert (gradient_samples is None) or isinstance(gradient_samples, Labels)
+        self._gradient_samples = gradient_samples
+        self._features = features
+        self._components = components
+
+        self._sample_names = sample_names
+        self._samples = []
+
+        self._data = []
+        self._gradient_data = []
+
+    def add_samples(self, labels, data, gradient=None):
+        assert isinstance(data, np.ndarray)
+        assert data.shape[2] == self._features.shape[0]
+        assert data.shape[1] == self._components.shape[0]
+
+        labels = np.asarray(labels, dtype=np.int32)
+        print("wtf", data.shape, len(data.shape))
+        if len(data.shape) == 2:
+            data = data.reshape(1, data.shape[0], data.shape[1])
+            print("wtf squared", data.shape, len(data.shape))
+        assert data.shape[0] == labels.shape[0]
+
+        self._samples.append(labels)
+        self._data.append(data)
+
+        if gradient is not None:
+            raise(Exception("Gradient data not implemented for BlockBuilderSamples"))
+            if len(gradient.shape) == 2:
+                gradient = gradient.reshape(gradient.shape[0], gradient.shape[1], 1)
+
+            assert gradient.shape[2] == labels.shape[0]
+            self._gradient_data.append(gradient)
+
+    def build(self):
+        samples = Labels(self._sample_names, np.vstack(self._samples))
+        block = Block(
+            values=np.concatenate(self._data, axis=0),
+            samples=samples,
+            components=self._components,
+            features=self._features,
+        )
+
+        if self._gradient_samples is not None:
+            raise(Exception("Gradient data not implemented for BlockBuilderSamples"))
+            block.add_gradient(
+                "positions",
+                self._gradient_samples,
+                np.concatenate(self._gradient_data, axis=2),
+            )
+
+        self._gradient_data = []
+        self._data = []
+        self._features = []
+
+        return block
 
 
 class BlockBuilderPerFeatures:
