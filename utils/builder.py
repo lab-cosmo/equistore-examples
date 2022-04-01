@@ -115,11 +115,9 @@ class BlockBuilderPerSamples:
         assert data.shape[2] == self._features.shape[0]
         assert data.shape[1] == self._components.shape[0]
 
-        labels = np.asarray(labels, dtype=np.int32)
-        print("wtf", data.shape, len(data.shape))
+        labels = np.asarray(labels, dtype=np.int32)        
         if len(data.shape) == 2:
-            data = data.reshape(1, data.shape[0], data.shape[1])
-            print("wtf squared", data.shape, len(data.shape))
+            data = data.reshape(1, data.shape[0], data.shape[1])            
         assert data.shape[0] == labels.shape[0]
 
         self._samples.append(labels)
