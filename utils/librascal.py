@@ -168,6 +168,87 @@ class RascalSphericalExpansion:
 
         return Descriptor(sparse, blocks)
 
+class RascalPairExpansion:
+    def __init__(self, hypers):
+        self._hypers = copy.deepcopy(hypers)
+
+    def compute(self, frames: List[ase.Atoms]) -> Descriptor:
+        # Step 1: compute spherical expansion with librascal
+        hypers = copy.deepcopy(self._hypers)
+        if hypers["compute_gradients"]:
+            raise Exception("Pair expansion with gradient is not implemented")
+
+        max_atoms = max([len(f) for f in frames])
+        global_species = list(range(max_atoms))
+
+        hypers["global_species"] = global_species
+        hypers["expansion_by_species_method"] = "user defined"
+
+        ijframes = []
+        for f in frames:
+            ijf = f.copy()
+            ijf.numbers = global_species[:len(f)]
+            ijframes.append(ijf)
+
+        calculator = SphericalExpansion(**hypers)
+        
+        # Step 2: move data around to follow the storage convention
+        sparse = Labels(
+            names=["spherical_harmonics_l"],
+            values=np.array(
+                [
+                    [l]
+                    for l in range(hypers["max_angular"] + 1)                    
+                ],
+                dtype=np.int32,
+            ),
+        )
+
+        features = Labels(
+            names=["n"],
+            values=np.array([[n] for n in range(hypers["max_radial"])], dtype=np.int32),
+        )
+
+        lm_slices = []
+        start = 0
+        for l in range(hypers["max_angular"] + 1):
+            stop = start + 2 * l + 1
+            lm_slices.append(slice(start, stop))
+            start = stop
+
+        data = []
+        samples = []
+        for i, ijf in enumerate(ijframes):
+            idata = calculator.transform(ijf).get_features(calculator).reshape(len(ijf), max_atoms, hypers["max_radial"], -1)
+            nonzero = np.where( (idata**2).sum(axis=(2,3)) > 1e-20)
+            data.append(idata[nonzero[0], nonzero[1]].reshape(len(nonzero[0]),hypers["max_radial"],-1) )
+            samples.append( np.asarray( [nonzero[0]*0+i, nonzero[0], nonzero[1]] ).T )
+        
+        data = np.concatenate(data)
+        samples = Labels(
+                names=["structure", "center_i", "center_j"],
+                values=np.concatenate(samples).astype(np.int32)
+        )
+        blocks = []
+        for (l,) in sparse:
+            block_data = data[..., lm_slices[l]]
+            block_data = block_data.swapaxes(1, 2)
+
+            components = Labels(
+                names=["spherical_harmonics_m"],
+                values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
+            )
+
+            block = Block(
+                values=np.copy(block_data),
+                samples=samples,
+                components=components,
+                features=features,
+            )
+
+            blocks.append(block)
+
+        return Descriptor(sparse, blocks)
 
 class SphericalExpansionAutograd(torch.autograd.Function):
     @staticmethod

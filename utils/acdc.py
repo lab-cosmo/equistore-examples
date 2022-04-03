@@ -627,7 +627,6 @@ def canonical_indices(m_nu, m_1, M=None):
 # Numerical feature compression
 ##############################################################################
 
-
 def threshold_indices(
     x_a,
     x_b,
