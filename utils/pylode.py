@@ -2,10 +2,8 @@ from typing import List
 import copy
 import numpy as np
 
-import warnings
-
 import ase
-from pylode import DensityProjectionCalculator as SphericalExpansion
+from pylode import DensityProjectionCalculator
 
 from aml_storage import Labels, Block, Descriptor
 
@@ -21,15 +19,11 @@ class PyLODESphericalExpansion:
             map(int, np.unique(np.concatenate([f.numbers for f in frames])))
         )
 
-        hypers["global_species"] = global_species
-        hypers["expansion_by_species_method"] = "user defined"
-
-        calculator = SphericalExpansion(**hypers)
+        calculator = DensityProjectionCalculator(**hypers)
         calculator.transform(frames)
         data = calculator.features
-        gradients = calculator.gradients
+        gradients = calculator.feature_gradients
         info = calculator.representation_info
-        grad_info = calculator.gradients_info
 
         # Step 2: move data around to follow the storage convention
         sparse = Labels(
@@ -57,18 +51,6 @@ class PyLODESphericalExpansion:
             lm_slices.append(slice(start, stop))
             start = stop
 
-        data = data.reshape(
-            data.shape[0], len(global_species), hypers["max_radial"], -1
-        )
-        gradients = gradients.reshape(
-            gradients.shape[0], len(global_species), hypers["max_radial"], -1
-        )
-
-        global_to_per_structure_atom_id = []
-        for frame in frames:
-            for i in range(len(frame)):
-                global_to_per_structure_atom_id.append(i)
-
         blocks = []
         for sparse_i, (l, center_species, neighbor_species) in enumerate(sparse):
             neighbor_species_i = global_species.index(neighbor_species)
@@ -88,12 +70,7 @@ class PyLODESphericalExpansion:
             block_gradients = None
             gradient_samples = None
             if hypers["compute_gradients"]:
-                warnings.warn(
-                    "numpy/forward gradients are currently broken with librascal,"
-                    "please use rascaline instead"
-                )
-                # the code below is missing some of the gradient sample, making
-                # the forces not match the energy in a finite difference test
+                grad_info = calculator.gradients_info
 
                 gradient_samples = []
                 block_gradients = []
@@ -105,12 +82,9 @@ class PyLODESphericalExpansion:
                         ),
                         grad_info[:, 4] == neighbor_species,
                     )
-
                     for grad_index in np.where(gradient_mask)[0]:
-                        start = 3 * grad_index
-                        stop = 3 * grad_index + 3
                         block_gradient = gradients[
-                            start:stop, neighbor_species_i, :, lm_slices[l]
+                            grad_index, :, neighbor_species_i, :, lm_slices[l]
                         ]
                         block_gradient = block_gradient.swapaxes(1, 2)
                         if np.linalg.norm(block_gradient) == 0:
@@ -119,9 +93,8 @@ class PyLODESphericalExpansion:
                         block_gradients.append(block_gradient)
 
                         structure = grad_info[grad_index, 0]
-                        neighbor = global_to_per_structure_atom_id[
-                            grad_info[grad_index, 2]
-                        ]
+                        neighbor = grad_info[grad_index, 2]
+
                         gradient_samples.append((sample_i, structure, neighbor, 0))
                         gradient_samples.append((sample_i, structure, neighbor, 1))
                         gradient_samples.append((sample_i, structure, neighbor, 2))
@@ -140,18 +113,6 @@ class PyLODESphericalExpansion:
                         names=["sample", "structure", "atom", "spatial"],
                         values=np.zeros((0, 4), dtype=np.int32),
                     )
-
-            # reset atom index (librascal uses a global atom index)
-            samples = Labels(
-                names=["structure", "center"],
-                values=np.array(
-                    [
-                        (structure, global_to_per_structure_atom_id[center])
-                        for structure, center in samples
-                    ],
-                    dtype=np.int32,
-                ),
-            )
 
             block = Block(
                 values=np.copy(block_data),
