@@ -64,15 +64,17 @@ def _write_labels(file, name, labels, names_size):
 
 
 def _write_block(file, block, dtype):
+    gradient_parameters = block.gradients_list()
+
     names_size = max(
         len(name.encode("ascii"))
         for name in itertools.chain(
             block.samples.names,
             block.components.names,
             block.features.names,
+            *[block.gradient(parameter)[0].names for parameter in gradient_parameters],
         )
     )
-    # TODO: include gradient samples in names_size
 
     file.createDimension("names_length", names_size)
 
@@ -86,11 +88,9 @@ def _write_block(file, block, dtype):
     values = file.createVariable("values", dtype, ["samples", "components", "features"])
     values[:] = block.values
 
-    # TODO: we need to be able to list gradient?
-    if block.has_gradient("positions"):
-        gradient_samples, gradient = block.gradient("positions")
+    for parameter in gradient_parameters:
+        gradient_samples, gradient = block.gradient(parameter)
 
-        parameter = "positions"
         _write_labels(
             file, f"gradient_{parameter}_samples", gradient_samples, names_size
         )
