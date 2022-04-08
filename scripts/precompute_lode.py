@@ -7,7 +7,7 @@ Calculations may take along time and memory. Be careful!
 import argparse
 import os
 import sys
-from typing import List, Dict
+from typing import Dict, List
 
 import ase
 import ase.io
@@ -52,7 +52,7 @@ def main():
                         dest="input_file",
                         type=str,
                         help="Trajectory for constructing features.",
-                        default="../datasets/point_charges_Training_set.xyz")
+                        required=True)
     parser.add_argument("-index",
                         dest="index",
                         type=str,
@@ -62,7 +62,7 @@ def main():
                         dest="max_radial",
                         type=int,
                         help="Number of radial functions",
-                        default=1)
+                        default=6)
     parser.add_argument("-max_angular",
                         dest="max_angular",
                         type=int,
@@ -79,7 +79,7 @@ def main():
                         help="Smearing of the Gaussain (Å)."
                         "Note that computational cost scales "
                         "cubically with 1/smearing.",
-                        default=1)
+                        default=0.3)
     parser.add_argument("-radial_basis",
                         dest="radial_basis",
                         type=str,
