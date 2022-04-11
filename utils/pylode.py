@@ -24,7 +24,6 @@ class PyLODESphericalExpansion:
         calculator = DensityProjectionCalculator(**hypers)
         calculator.transform(frames, show_progress=show_progress)
         data = calculator.features
-        gradients = calculator.feature_gradients
         info = calculator.representation_info
 
         # Step 2: move data around to follow the storage convention
@@ -76,6 +75,7 @@ class PyLODESphericalExpansion:
             block_gradients = None
             gradient_samples = None
             if hypers["compute_gradients"]:
+                gradients = calculator.feature_gradients
                 grad_info = calculator.gradients_info
 
                 gradient_samples = []
