@@ -1,155 +1,88 @@
 import numpy as np
-from scipy.io import netcdf_file
-import itertools
-import zipfile
-import io
+import h5py
 
 from aml_storage import Labels, Block, Descriptor
 
 
 def write(path, descriptor, dtype="default"):
-    # The format used here is a collection of netcdf file, using classic netcdf
-    # (v3) and 64-bit offsets, grouped together in a non compressed zip file.
-    #
-    # Each block is stored in a separate netcdf file & the sparse labels are
-    # stored in another one
-    file = zipfile.ZipFile(path, mode="w", compression=zipfile.ZIP_STORED)
+    with h5py.File(path, mode="w", track_order=True) as file:
+        _write_labels(file, "sparse", descriptor.sparse)
 
-    # write the sparse labels in a sparse.nc file
-    buffer = io.BytesIO()
-    nc_file = netcdf_file(buffer, mode="w", version=2)
-    names_size = names_size = max(
-        len(name.encode("ascii")) for name in descriptor.sparse.names
-    )
-    nc_file.createDimension("names_length", names_size)
-    _write_labels(nc_file, "sparse", descriptor.sparse, names_size)
-    nc_file.flush()
-
-    file.writestr("sparse.nc", data=buffer.getbuffer().tobytes())
-
-    # and the blocks in block-{i}.nc
-    for i in range(len(descriptor.sparse)):
-        block = descriptor.block(i)
-
-        buffer = io.BytesIO()
-        nc_file = netcdf_file(buffer, mode="w", version=2)
-        _write_block(nc_file, block, dtype)
-        nc_file.flush()
-
-        file.writestr(f"block-{i}.nc", data=buffer.getbuffer().tobytes())
-
-    file.close()
+        for i, (_, block) in enumerate(descriptor):
+            _write_block(file, f"block-{i}", block)
 
 
-def _write_labels(file, name, labels, names_size):
-    count = len(labels)
-    size = len(labels[0])
-
-    file.createDimension(name, count)
-    file.createDimension(f"{name}_variables", size)
-
-    samples = file.createVariable(name, "int32", [name, f"{name}_variables"])
-    samples[:] = labels.view(dtype=np.int32).reshape(count, size)
-
-    names = file.createVariable(
-        f"{name}_variables", "B", [f"{name}_variables", "names_length"]
+def _write_labels(h5_group, name, labels):
+    dataset = h5_group.create_dataset(
+        name,
+        data=labels.view(dtype="int32").reshape(len(labels), -1),
     )
 
-    for name in labels.names:
-        assert len(name.encode("ascii")) <= names_size
-
-    data = "".join(n.ljust(names_size) for n in labels.names)
-    data = np.array(list(data.encode("ascii")), dtype="i1")
-    names[:] = data.reshape(len(labels.names), names_size)
+    dataset.attrs["names"] = labels.names
 
 
-def _write_block(file, block, dtype):
-    gradient_parameters = block.gradients_list()
+def _write_block(root, name, block):
+    group = root.create_group(name)
 
-    names_size = max(
-        len(name.encode("ascii"))
-        for name in itertools.chain(
-            block.samples.names,
-            block.components.names,
-            block.features.names,
-            *[block.gradient(parameter)[0].names for parameter in gradient_parameters],
-        )
+    group.create_dataset(
+        "values",
+        data=block.values,
     )
+    _write_labels(group, "samples", block.samples)
+    _write_labels(group, "components", block.components)
+    _write_labels(group, "features", block.features)
 
-    file.createDimension("names_length", names_size)
+    if len(block.gradients_list()) == 0:
+        return
 
-    _write_labels(file, "samples", block.samples, names_size)
-    _write_labels(file, "components", block.components, names_size)
-    _write_labels(file, "features", block.features, names_size)
+    gradients = group.create_group("gradients")
+    for parameter in block.gradients_list():
+        gradient_sample, gradient_data = block.gradient(parameter)
 
-    if dtype == "default":
-        dtype = block.values.dtype
+        group = gradients.create_group(parameter)
 
-    values = file.createVariable("values", dtype, ["samples", "components", "features"])
-    values[:] = block.values
-
-    for parameter in gradient_parameters:
-        gradient_samples, gradient = block.gradient(parameter)
-
-        _write_labels(
-            file, f"gradient_{parameter}_samples", gradient_samples, names_size
+        group.create_dataset(
+            "data",
+            data=gradient_data,
         )
-
-        values = file.createVariable(
-            f"gradient_{parameter}",
-            dtype,
-            [f"gradient_{parameter}_samples", "components", "features"],
-        )
-        values[:] = gradient
+        _write_labels(group, "samples", gradient_sample)
+        _write_labels(group, "components", block.components)
+        _write_labels(group, "features", block.features)
 
 
 def read(path):
-    file = zipfile.ZipFile(path, mode="r")
+    with h5py.File(path, mode="r") as file:
+        sparse = file["sparse"]
+        sparse = Labels(sparse.attrs["names"], np.array(sparse))
 
-    with file.open("sparse.nc") as sparse_fd:
-        nc_file = netcdf_file(sparse_fd, mode="r")
-        sparse = _read_labels(nc_file, "sparse")
+        blocks = []
+        for i in range(len(sparse)):
+            h5_block = file[f"block-{i}"]
 
-    blocks = []
-    for i in range(len(sparse)):
-        with file.open(f"block-{i}.nc") as block_fd:
-            nc_file = netcdf_file(block_fd, mode="r")
+            values = np.array(h5_block["values"])
+            samples = h5_block["samples"]
+            samples = Labels(samples.attrs["names"], np.array(samples))
 
-            samples = _read_labels(nc_file, "samples")
-            components = _read_labels(nc_file, "components")
-            features = _read_labels(nc_file, "features")
+            components = h5_block["components"]
+            components = Labels(components.attrs["names"], np.array(components))
 
-            values = nc_file.variables["values"][:].astype(np.float64)
+            features = h5_block["features"]
+            features = Labels(features.attrs["names"], np.array(features))
+
             block = Block(values, samples, components, features)
 
-            parameters = []
-            for variable in nc_file.variables.keys():
-                if variable.endswith("_samples"):
-                    continue
-                if variable.endswith("_samples_variables"):
-                    continue
+            if "gradients" in h5_block:
+                gradients = h5_block["gradients"]
+                for parameter, grad_block in gradients.items():
+                    data = np.array(grad_block["data"])
 
-                if variable.startswith("gradient_"):
-                    parameters.append(variable[9:])
+                    samples = grad_block["samples"]
+                    samples = Labels(samples.attrs["names"], np.array(samples))
 
-            for parameter in parameters:
-                samples = _read_labels(nc_file, f"gradient_{parameter}_samples")
-                values = nc_file.variables[f"gradient_{parameter}"][:].astype(
-                    np.float64
-                )
-                block.add_gradient(parameter, samples, values)
+                    # skip components & features for now
+
+                    block.add_gradient(parameter, samples, data)
 
             blocks.append(block)
 
     return Descriptor(sparse, blocks)
-
-
-def _read_labels(file, name):
-    names = []
-    for i in range(file.dimensions[f"{name}_variables"]):
-        variable = file.variables[f"{name}_variables"][i, :].tolist()
-        variable = map(lambda u: u.decode("ascii"), variable)
-        variable = "".join(variable)
-        names.append(variable.strip())
-
-    return Labels(names, file.variables[name][:].astype(np.int32))
