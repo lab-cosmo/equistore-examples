@@ -5,6 +5,7 @@ from aml_storage import Labels, Block, Descriptor
 
 
 def write(path, descriptor, dtype="default"):
+    path += '.h5' * (not path.endswith('.h5'))
     with h5py.File(path, mode="w", track_order=True) as file:
         _write_labels(file, "sparse", descriptor.sparse)
 
