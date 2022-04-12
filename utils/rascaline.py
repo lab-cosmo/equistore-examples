@@ -1,6 +1,5 @@
 import copy
 import numpy as np
-import torch
 
 from rascaline import SphericalExpansion
 
@@ -83,7 +82,7 @@ class RascalineSphericalExpansion:
                     dtype=np.int32,
                 ),
             )
-            components = Labels(
+            spherical_component = Labels(
                 names=["spherical_harmonics_m"],
                 values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
@@ -94,7 +93,10 @@ class RascalineSphericalExpansion:
                 gradient_samples = []
                 block_gradients = []
                 for sample_i in np.where(mask)[0]:
-                    gradient_mask = old_gradient_samples["sample"] == sample_i
+                    gradient_mask = np.logical_and(
+                        old_gradient_samples["sample"] == sample_i,
+                        old_gradient_samples["spatial"] == 0,
+                    )
 
                     new_sample_i = center_map[
                         tuple(old_samples[sample_i][["structure", "center"]])
@@ -102,41 +104,50 @@ class RascalineSphericalExpansion:
 
                     for grad_index in np.where(gradient_mask)[0]:
                         block_gradients.append(
-                            gradients[grad_index : grad_index + 1, lm_slices[l], :]
+                            gradients[
+                                None, grad_index : grad_index + 3, lm_slices[l], :
+                            ]
                         )
 
                         structure = old_samples[sample_i]["structure"]
-                        atom, spatial = old_gradient_samples[grad_index][
-                            ["atom", "spatial"]
-                        ]
-                        gradient_samples.append(
-                            (new_sample_i, structure, atom, spatial)
-                        )
+                        atom = old_gradient_samples[grad_index][["atom"]][0]
+
+                        gradient_samples.append((new_sample_i, structure, atom))
 
                 if len(gradient_samples) != 0:
-                    block_gradients = np.concatenate(block_gradients)
+                    block_gradients = np.vstack(block_gradients)
                     gradient_samples = Labels(
-                        names=["sample", "structure", "atom", "spatial"],
+                        names=["sample", "structure", "atom"],
                         values=np.vstack(gradient_samples).astype(np.int32),
                     )
                 else:
                     block_gradients = np.zeros(
-                        (0, components.shape[0], features.shape[0])
+                        (0, 3, spherical_component.shape[0], features.shape[0])
                     )
                     gradient_samples = Labels(
-                        names=["sample", "structure", "atom", "spatial"],
-                        values=np.zeros((0, 4), dtype=np.int32),
+                        names=["sample", "structure", "atom"],
+                        values=np.zeros((0, 3), dtype=np.int32),
                     )
 
             block = Block(
                 values=block_data,
                 samples=samples,
-                components=components,
+                components=[spherical_component],
                 features=features,
             )
 
             if block_gradients is not None:
-                block.add_gradient("positions", gradient_samples, block_gradients)
+                spatial_component = Labels(
+                    names=["gradient_direction"],
+                    values=np.array([[0], [1], [2]], dtype=np.int32),
+                )
+                gradient_components = [spatial_component, spherical_component]
+                block.add_gradient(
+                    "positions",
+                    block_gradients,
+                    gradient_samples,
+                    gradient_components,
+                )
 
             blocks.append(block)
 

@@ -9,17 +9,17 @@ from aml_storage import Labels, Block, Descriptor
 
 
 class PyLODESphericalExpansion:
-
     def __init__(self, hypers):
         self._hypers = copy.deepcopy(hypers)
 
-    def compute(self,
-                frames: List[ase.Atoms],
-                show_progress: bool = False) -> Descriptor:
+    def compute(
+        self, frames: List[ase.Atoms], show_progress: bool = False
+    ) -> Descriptor:
         # Step 1: compute spherical expansion with pylode
         hypers = copy.deepcopy(self._hypers)
         global_species = list(
-            map(int, np.unique(np.concatenate([f.numbers for f in frames]))))
+            map(int, np.unique(np.concatenate([f.numbers for f in frames])))
+        )
 
         calculator = DensityProjectionCalculator(**hypers)
         calculator.transform(frames, show_progress=show_progress)
@@ -28,22 +28,21 @@ class PyLODESphericalExpansion:
 
         # Step 2: move data around to follow the storage convention
         sparse = Labels(
-            names=[
-                "spherical_harmonics_l", "center_species", "neighbor_species"
-            ],
+            names=["spherical_harmonics_l", "center_species", "neighbor_species"],
             values=np.array(
-                [[l, center_species, neighbor_species]
-                 for l in range(hypers["max_angular"] + 1)
-                 for center_species in global_species
-                 for neighbor_species in global_species],
+                [
+                    [l, center_species, neighbor_species]
+                    for l in range(hypers["max_angular"] + 1)
+                    for center_species in global_species
+                    for neighbor_species in global_species
+                ],
                 dtype=np.int32,
             ),
         )
 
         features = Labels(
             names=["n"],
-            values=np.array([[n] for n in range(hypers["max_radial"])],
-                            dtype=np.int32),
+            values=np.array([[n] for n in range(hypers["max_radial"])], dtype=np.int32),
         )
 
         lm_slices = []
@@ -54,22 +53,19 @@ class PyLODESphericalExpansion:
             start = stop
 
         blocks = []
-        for sparse_i, (l, center_species,
-                       neighbor_species) in enumerate(sparse):
+        for sparse_i, (l, center_species, neighbor_species) in enumerate(sparse):
             neighbor_species_i = global_species.index(neighbor_species)
             center_species_mask = np.where(info[:, 2] == center_species)[0]
-            block_data = data[center_species_mask, neighbor_species_i, :,
-                              lm_slices[l]]
+            block_data = data[center_species_mask, neighbor_species_i, :, lm_slices[l]]
             block_data = block_data.swapaxes(1, 2)
 
             samples = Labels(
                 names=["structure", "center"],
                 values=np.copy(info[center_species_mask, :2]).astype(np.int32),
             )
-            components = Labels(
+            spherical_component = Labels(
                 names=["spherical_harmonics_m"],
-                values=np.array([[m] for m in range(-l, l + 1)],
-                                dtype=np.int32),
+                values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
 
             block_gradients = None
@@ -89,49 +85,52 @@ class PyLODESphericalExpansion:
                         grad_info[:, 4] == neighbor_species,
                     )
                     for grad_index in np.where(gradient_mask)[0]:
-                        block_gradient = gradients[grad_index, :,
-                                                   neighbor_species_i, :,
-                                                   lm_slices[l]]
+                        block_gradient = gradients[
+                            grad_index, :, neighbor_species_i, :, lm_slices[l]
+                        ]
                         block_gradient = block_gradient.swapaxes(1, 2)
                         if np.linalg.norm(block_gradient) == 0:
                             continue
 
-                        block_gradients.append(block_gradient)
+                        block_gradients.append(block_gradient[None, :, :, :])
 
                         structure = grad_info[grad_index, 0]
                         neighbor = grad_info[grad_index, 2]
 
-                        gradient_samples.append(
-                            (sample_i, structure, neighbor, 0))
-                        gradient_samples.append(
-                            (sample_i, structure, neighbor, 1))
-                        gradient_samples.append(
-                            (sample_i, structure, neighbor, 2))
+                        gradient_samples.append((sample_i, structure, neighbor))
 
                 if len(gradient_samples) != 0:
-                    block_gradients = np.concatenate(block_gradients)
+                    block_gradients = np.vstack(block_gradients)
                     gradient_samples = Labels(
-                        names=["sample", "structure", "atom", "spatial"],
+                        names=["sample", "structure", "atom"],
                         values=np.vstack(gradient_samples).astype(np.int32),
                     )
                 else:
                     block_gradients = np.zeros(
-                        (0, components.shape[0], features.shape[0]))
+                        (0, 3, spherical_component.shape[0], features.shape[0])
+                    )
                     gradient_samples = Labels(
-                        names=["sample", "structure", "atom", "spatial"],
-                        values=np.zeros((0, 4), dtype=np.int32),
+                        names=["sample", "structure", "atom"],
+                        values=np.zeros((0, 3), dtype=np.int32),
                     )
 
             block = Block(
                 values=np.copy(block_data),
                 samples=samples,
-                components=components,
+                components=[spherical_component],
                 features=features,
             )
 
+            spatial_component = Labels(
+                names=["gradient_direction"],
+                values=np.array([[0], [1], [2]], dtype=np.int32),
+            )
+            gradient_components = [spatial_component, spherical_component]
+
             if block_gradients is not None:
-                block.add_gradient("positions", gradient_samples,
-                                   block_gradients)
+                block.add_gradient(
+                    "positions", block_gradients, gradient_samples, gradient_components
+                )
 
             blocks.append(block)
 

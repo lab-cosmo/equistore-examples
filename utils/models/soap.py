@@ -48,25 +48,25 @@ def compute_power_spectrum(spherical_expansion):
             data = factor * ops.einsum("ima, imb -> iab", spx_1.values, spx_2.values)
 
             block = Block(
-                values=data.reshape(data.shape[0], 1, -1),
+                values=data.reshape(data.shape[0], -1),
                 samples=spx_1.samples,
-                components=Labels.single(),
+                components=[],
                 features=features,
             )
 
-            n_features = block.values.shape[2]
+            n_features = block.values.shape[1]
 
             if spx_1.has_gradient("positions"):
-                gradients_samples_1, gradient_1 = spx_1.gradient("positions")
-                gradients_samples_2, gradient_2 = spx_2.gradient("positions")
+                gradient_1 = spx_1.gradient("positions")
+                gradient_2 = spx_2.gradient("positions")
 
                 gradients_samples = np.unique(
-                    np.concatenate([gradients_samples_1, gradients_samples_2])
+                    np.concatenate([gradient_1.samples, gradient_2.samples])
                 )
-                gradients_samples = gradients_samples.view(np.int32).reshape(-1, 4)
+                gradients_samples = gradients_samples.view(np.int32).reshape(-1, 3)
 
                 gradients_samples = Labels(
-                    names=gradients_samples_1.names, values=gradients_samples
+                    names=gradient_1.samples.names, values=gradients_samples
                 )
 
                 gradients_sample_mapping = {
@@ -74,30 +74,36 @@ def compute_power_spectrum(spherical_expansion):
                 }
 
                 gradient_data = ops.zeros_like(
-                    gradient_1, (gradients_samples.shape[0], 1, n_features)
+                    gradient_1.data, (gradients_samples.shape[0], 3, n_features)
                 )
 
                 gradient_data_1 = factor * ops.einsum(
-                    "ima, imb -> iab",
-                    gradient_1,
-                    spx_2.values[gradients_samples_1["sample"], :, :],
-                ).reshape(gradients_samples_1.shape[0], -1)
+                    "ixma, imb -> ixab",
+                    gradient_1.data,
+                    spx_2.values[gradient_1.samples["sample"], :, :],
+                ).reshape(gradient_1.samples.shape[0], 3, -1)
 
-                for sample, row in zip(gradients_samples_1, gradient_data_1):
+                for sample, row in zip(gradient_1.samples, gradient_data_1):
                     new_row = gradients_sample_mapping[tuple(sample)]
-                    gradient_data[new_row, 0, :] += row
+                    gradient_data[new_row, :, :] += row
 
                 gradient_data_2 = factor * ops.einsum(
-                    "ima, imb -> iab",
-                    spx_1.values[gradients_samples_2["sample"], :, :],
-                    gradient_2,
-                ).reshape(gradients_samples_2.shape[0], -1)
+                    "ima, ixmb -> ixab",
+                    spx_1.values[gradient_2.samples["sample"], :, :],
+                    gradient_2.data,
+                ).reshape(gradient_2.samples.shape[0], 3, -1)
 
-                for sample, row in zip(gradients_samples_2, gradient_data_2):
+                for sample, row in zip(gradient_2.samples, gradient_data_2):
                     new_row = gradients_sample_mapping[tuple(sample)]
-                    gradient_data[new_row, 0, :] += row
+                    gradient_data[new_row, :, :] += row
 
-                block.add_gradient("positions", gradients_samples, gradient_data)
+                assert gradient_1.components[0].names == ("gradient_direction",)
+                block.add_gradient(
+                    "positions",
+                    gradient_data,
+                    gradients_samples,
+                    [gradient_1.components[0]],
+                )
 
             sparse.append((l1, cs1, ns1, ns2))
             blocks.append(block)

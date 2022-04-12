@@ -81,7 +81,7 @@ class RascalSphericalExpansion:
                 names=["structure", "center"],
                 values=np.copy(info[center_species_mask, :2]).astype(np.int32),
             )
-            components = Labels(
+            spherical_component = Labels(
                 names=["spherical_harmonics_m"],
                 values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
@@ -114,6 +114,9 @@ class RascalSphericalExpansion:
                             start:stop, neighbor_species_i, :, lm_slices[l]
                         ]
                         block_gradient = block_gradient.swapaxes(1, 2)
+                        block_gradient = block_gradient.reshape(
+                            -1, 3, block_gradient.shape[1], block_gradient.shape[2]
+                        )
                         if np.linalg.norm(block_gradient) == 0:
                             continue
 
@@ -123,23 +126,21 @@ class RascalSphericalExpansion:
                         neighbor = global_to_per_structure_atom_id[
                             grad_info[grad_index, 2]
                         ]
-                        gradient_samples.append((sample_i, structure, neighbor, 0))
-                        gradient_samples.append((sample_i, structure, neighbor, 1))
-                        gradient_samples.append((sample_i, structure, neighbor, 2))
+                        gradient_samples.append((sample_i, structure, neighbor))
 
                 if len(gradient_samples) != 0:
                     block_gradients = np.concatenate(block_gradients)
                     gradient_samples = Labels(
-                        names=["sample", "structure", "atom", "spatial"],
+                        names=["sample", "structure", "atom"],
                         values=np.vstack(gradient_samples).astype(np.int32),
                     )
                 else:
                     block_gradients = np.zeros(
-                        (0, components.shape[0], features.shape[0])
+                        (0, 3, spherical_component.shape[0], features.shape[0])
                     )
                     gradient_samples = Labels(
-                        names=["sample", "structure", "atom", "spatial"],
-                        values=np.zeros((0, 4), dtype=np.int32),
+                        names=["sample", "structure", "atom"],
+                        values=np.zeros((0, 3), dtype=np.int32),
                     )
 
             # reset atom index (librascal uses a global atom index)
@@ -157,16 +158,28 @@ class RascalSphericalExpansion:
             block = Block(
                 values=np.copy(block_data),
                 samples=samples,
-                components=components,
+                components=[spherical_component],
                 features=features,
             )
 
+            spatial_component = Labels(
+                names=["gradient_direction"],
+                values=np.array([[0], [1], [2]], dtype=np.int32),
+            )
+            gradient_components = [spatial_component, spherical_component]
+
             if block_gradients is not None:
-                block.add_gradient("positions", gradient_samples, block_gradients)
+                block.add_gradient(
+                    "positions",
+                    block_gradients,
+                    gradient_samples,
+                    gradient_components,
+                )
 
             blocks.append(block)
 
         return Descriptor(sparse, blocks)
+
 
 class RascalPairExpansion:
     def __init__(self, hypers):
@@ -187,19 +200,16 @@ class RascalPairExpansion:
         ijframes = []
         for f in frames:
             ijf = f.copy()
-            ijf.numbers = global_species[:len(f)]
+            ijf.numbers = global_species[: len(f)]
             ijframes.append(ijf)
 
         calculator = SphericalExpansion(**hypers)
-        
+
         # Step 2: move data around to follow the storage convention
         sparse = Labels(
             names=["spherical_harmonics_l"],
             values=np.array(
-                [
-                    [l]
-                    for l in range(hypers["max_angular"] + 1)                    
-                ],
+                [[l] for l in range(hypers["max_angular"] + 1)],
                 dtype=np.int32,
             ),
         )
@@ -219,22 +229,30 @@ class RascalPairExpansion:
         data = []
         samples = []
         for i, ijf in enumerate(ijframes):
-            idata = calculator.transform(ijf).get_features(calculator).reshape(len(ijf), max_atoms, hypers["max_radial"], -1)
-            nonzero = np.where( (idata**2).sum(axis=(2,3)) > 1e-20)
-            data.append(idata[nonzero[0], nonzero[1]].reshape(len(nonzero[0]),hypers["max_radial"],-1) )
-            samples.append( np.asarray( [nonzero[0]*0+i, nonzero[0], nonzero[1]] ).T )
-        
+            idata = (
+                calculator.transform(ijf)
+                .get_features(calculator)
+                .reshape(len(ijf), max_atoms, hypers["max_radial"], -1)
+            )
+            nonzero = np.where((idata**2).sum(axis=(2, 3)) > 1e-20)
+            data.append(
+                idata[nonzero[0], nonzero[1]].reshape(
+                    len(nonzero[0]), hypers["max_radial"], -1
+                )
+            )
+            samples.append(np.asarray([nonzero[0] * 0 + i, nonzero[0], nonzero[1]]).T)
+
         data = np.concatenate(data)
         samples = Labels(
-                names=["structure", "center_i", "center_j"],
-                values=np.concatenate(samples).astype(np.int32)
+            names=["structure", "center_i", "center_j"],
+            values=np.concatenate(samples).astype(np.int32),
         )
         blocks = []
         for (l,) in sparse:
             block_data = data[..., lm_slices[l]]
             block_data = block_data.swapaxes(1, 2)
 
-            components = Labels(
+            component = Labels(
                 names=["spherical_harmonics_m"],
                 values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
@@ -242,13 +260,14 @@ class RascalPairExpansion:
             block = Block(
                 values=np.copy(block_data),
                 samples=samples,
-                components=components,
+                components=[component],
                 features=features,
             )
 
             blocks.append(block)
 
         return Descriptor(sparse, blocks)
+
 
 class SphericalExpansionAutograd(torch.autograd.Function):
     @staticmethod
@@ -387,7 +406,7 @@ class RascalSphericalExpansionTorch:
                 names=["structure", "center"],
                 values=np.copy(info[center_species_mask, :2]).astype(np.int32),
             )
-            components = Labels(
+            component = Labels(
                 names=["spherical_harmonics_m"],
                 values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
@@ -396,7 +415,7 @@ class RascalSphericalExpansionTorch:
                 Block(
                     values=block_data,
                     samples=samples,
-                    components=components,
+                    components=[component],
                     features=features,
                 )
             )

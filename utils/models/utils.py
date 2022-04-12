@@ -5,51 +5,39 @@ from aml_storage import Block, Labels, Descriptor
 import utils.models.operations as ops
 
 
-def invariant_block_to_2d_array(block):
-    assert len(block.values.shape) == 3
-    assert block.values.shape[1] == 1
-    return block.values.reshape(block.values.shape[0], -1)
-
-
-def array_2d_to_invariant(array):
-    assert len(array.shape) == 2
-
-    return array.reshape(array.shape[0], 1, -1)
-
-
 def normalize(descriptor):
     blocks = []
     for sparse, block in descriptor:
         # only deal with invariants for now
-        assert block.values.shape[1] == 1
+        assert len(block.components) == 0
+        assert len(block.values.shape) == 2
 
-        values = block.values.reshape(-1, block.values.shape[2])
-        norm = ops.norm(values, axis=1)
-        values = values / norm[:, None]
+        norm = ops.norm(block.values, axis=1)
+        normalized_values = block.values / norm[:, None]
 
         new_block = Block(
-            values=values.reshape(-1, 1, values.shape[1]),
+            values=normalized_values,
             samples=block.samples,
-            components=block.components,
+            components=[],
             features=block.features,
         )
 
         if block.has_gradient("positions"):
-            gradient_samples, gradient = block.gradient("positions")
+            gradient = block.gradient("positions")
 
-            gradient = gradient.reshape(-1, gradient.shape[2])
-            gradient = gradient / norm[gradient_samples["sample"], None]
+            gradient_data = gradient.data / norm[gradient.samples["sample"], None, None]
 
             # gradient of x_i = X_i / N_i is given by
             # 1 / N_i \grad X_i - x_i [x_i @ 1 / N_i \grad X_i]
-            for sample_i, (sample, _, _, _) in enumerate(gradient_samples):
-                dot = gradient[sample_i] @ values[sample].T
-                gradient[sample_i, :] -= dot * values[sample, :]
+            for sample_i, (sample, _, _) in enumerate(gradient.samples):
+                dot = gradient_data[sample_i] @ normalized_values[sample].T
+
+                gradient_data[sample_i, 0, :] -= dot[0] * normalized_values[sample, :]
+                gradient_data[sample_i, 1, :] -= dot[1] * normalized_values[sample, :]
+                gradient_data[sample_i, 2, :] -= dot[2] * normalized_values[sample, :]
 
             new_block.add_gradient(
-                "positions",
-                gradient_samples,
-                gradient.reshape(-1, 1, gradient.shape[1]),
+                "positions", gradient_data, gradient.samples, gradient.components
             )
 
         blocks.append(new_block)
@@ -66,39 +54,37 @@ def dot(lhs_descriptor, rhs_descriptor, do_normalize=True):
         lhs_descriptor = normalize(lhs_descriptor)
 
     blocks = []
-    for sparse, lhs_block in lhs_descriptor:
-        rhs_block = rhs_descriptor.block(sparse)
-        assert np.all(lhs_block.features == rhs_block.features)
+    for sparse, lhs in lhs_descriptor:
+        rhs = rhs_descriptor.block(sparse)
+        assert np.all(lhs.features == rhs.features)
 
         # only deal with invariants for now
-        assert lhs_block.values.shape[1] == 1
-        assert rhs_block.values.shape[1] == 1
+        assert len(lhs.components) == 0
+        assert len(rhs.components) == 0
 
-        samples = lhs_block.samples
-        features = rhs_block.samples
-
-        rhs = invariant_block_to_2d_array(rhs_block)
-        lhs = invariant_block_to_2d_array(lhs_block)
+        samples = lhs.samples
+        features = rhs.samples
 
         block = Block(
-            values=array_2d_to_invariant(lhs @ rhs.T),
+            values=lhs.values @ rhs.values.T,
             samples=samples,
-            components=Labels.single(),
+            components=[],
             features=features,
         )
 
-        if lhs_block.has_gradient("positions"):
-            gradient_samples, gradient = lhs_block.gradient("positions")
+        if lhs.has_gradient("positions"):
+            gradient = lhs.gradient("positions")
 
-            gradient_data = gradient.reshape(-1, gradient.shape[2]) @ rhs.T
+            gradient_data = gradient.data @ rhs.values.T
 
             block.add_gradient(
                 "positions",
-                gradient_samples,
-                gradient_data.reshape(-1, 1, gradient_data.shape[1]),
+                gradient_data,
+                gradient.samples,
+                gradient.components,
             )
 
-        if rhs_block.has_gradient("positions"):
+        if rhs.has_gradient("positions"):
             print("ignoring gradients of kernel support points")
 
         blocks.append(block)
@@ -119,18 +105,23 @@ def power(descriptor, zeta):
         )
 
         if block.has_gradient("positions"):
-            gradient_samples, gradient = block.gradient("positions")
+            gradient = block.gradient("positions")
 
             if zeta > 1:
-                gradient_data = zeta * ops.float_power(
-                    block.values[gradient_samples["sample"]], zeta - 1
+                values_pow_zeta_m_1 = zeta * ops.float_power(
+                    block.values[gradient.samples["sample"], :], zeta - 1
                 )
-                gradient_data *= gradient
+                gradient_data = gradient.data * values_pow_zeta_m_1[:, None, :]
             else:
                 assert zeta == 1
-                gradient_data = gradient
+                gradient_data = gradient.data
 
-            new_block.add_gradient("positions", gradient_samples, gradient_data)
+            new_block.add_gradient(
+                "positions",
+                gradient_data,
+                gradient.samples,
+                gradient.components,
+            )
 
         blocks.append(new_block)
 
@@ -142,7 +133,7 @@ def structure_sum(descriptor, sum_features=False):
     for _, block in descriptor:
 
         # no lambda kernels for now
-        assert block.values.shape[1] == 1
+        assert len(block.components) == 0
 
         structures = np.unique(block.samples["structure"])
 
@@ -152,45 +143,39 @@ def structure_sum(descriptor, sum_features=False):
         else:
             features = block.features
 
-        result = ops.zeros_like(block.values, (len(structures), 1, features.shape[0]))
+        result = ops.zeros_like(block.values, (len(structures), features.shape[0]))
 
         if block.has_gradient("positions"):
             do_gradients = True
-            gradient_samples, gradient = block.gradient("positions")
+            gradient = block.gradient("positions")
 
-            assert np.all(np.unique(gradient_samples["structure"]) == structures)
+            assert np.all(np.unique(gradient.samples["structure"]) == structures)
 
             gradient_data = []
             new_gradient_samples = []
-            grad_atoms_by_structure = []  # TODO: bad name
+            atom_index_positions = []
             for structure_i, s1 in enumerate(structures):
-                mask = gradient_samples["structure"] == s1
-                atoms = np.unique(gradient_samples[mask]["atom"])
+                mask = gradient.samples["structure"] == s1
+                atoms = np.unique(gradient.samples[mask]["atom"])
 
                 gradient_data.append(
                     ops.zeros_like(
-                        gradient,
-                        (3 * len(atoms), 1, features.shape[0]),
+                        gradient.data,
+                        (len(atoms), 3, features.shape[0]),
                     )
                 )
 
                 new_gradient_samples.append(
                     np.array(
-                        [
-                            [structure_i, s1, atom, spatial]
-                            for atom in atoms
-                            for spatial in range(3)
-                        ],
+                        [[structure_i, s1, atom] for atom in atoms],
                         dtype=np.int32,
                     )
                 )
 
-                grad_atoms_by_structure.append(
-                    {atom: i for i, atom in enumerate(atoms)}
-                )
+                atom_index_positions.append({atom: i for i, atom in enumerate(atoms)})
 
             new_gradient_samples = Labels(
-                names=["sample", "structure", "atom", "spatial"],
+                names=["sample", "structure", "atom"],
                 values=np.concatenate(new_gradient_samples),
             )
 
@@ -203,55 +188,50 @@ def structure_sum(descriptor, sum_features=False):
 
                 for structure_j, s2 in enumerate(ref_structures):
                     s2_idx = block.features["structure"] == s2
-                    result[structure_i, 0, structure_j] = ops.sum(
-                        block.values[s1_idx, 0, :][:, s2_idx]
+                    result[structure_i, structure_j] = ops.sum(
+                        block.values[s1_idx, :][:, s2_idx]
                     )
 
                     if do_gradients:
-                        idx = np.where(gradient_samples["structure"] == s1)[0]
+                        idx = np.where(gradient.samples["structure"] == s1)[0]
                         for sample_i in idx:
-                            grad_sample = gradient_samples[sample_i]
-                            atom_i = grad_atoms_by_structure[structure_i][
+                            grad_sample = gradient.samples[sample_i]
+                            atom_i = atom_index_positions[structure_i][
                                 grad_sample["atom"]
                             ]
-                            index = 3 * atom_i + grad_sample["spatial"]
 
-                            gradient_data[structure_i][
-                                index, 0, structure_j
-                            ] += ops.sum(gradient[sample_i, 0, s2_idx])
+                            term = ops.sum(
+                                gradient.data[sample_i, :, :][:, s2_idx], axis=1
+                            )
+
+                            gradient_data[structure_i][atom_i, :, structure_j] += term
         else:
             for structure_i, s1 in enumerate(structures):
                 s1_idx = block.samples["structure"] == s1
 
-                result[structure_i, 0, :] = ops.sum(block.values[s1_idx, 0, :], axis=0)
+                result[structure_i, :] = ops.sum(block.values[s1_idx, :], axis=0)
 
                 if do_gradients:
-                    for sample_i in np.where(gradient_samples["structure"] == s1)[0]:
-                        grad_sample = gradient_samples[sample_i]
+                    for sample_i in np.where(gradient.samples["structure"] == s1)[0]:
+                        grad_sample = gradient.samples[sample_i]
 
-                        atom_i = grad_atoms_by_structure[structure_i][
-                            grad_sample["atom"]
-                        ]
-                        index = 3 * atom_i + grad_sample["spatial"]
-
-                        gradient_data[structure_i][index, 0, :] += gradient[
-                            sample_i, 0, :
+                        atom_i = atom_index_positions[structure_i][grad_sample["atom"]]
+                        gradient_data[structure_i][atom_i, :, :] += gradient.data[
+                            sample_i, :, :
                         ]
 
         new_block = Block(
             values=result,
             samples=Labels(["structure"], structures.reshape(-1, 1)),
-            components=Labels.single(),
+            components=[],
             features=features,
         )
 
         if do_gradients:
-            gradient = []
-            for d in gradient_data:
-                gradient.append(d.reshape(-1, features.shape[0]))
-
-            gradient_data = ops.vstack(gradient).reshape(-1, 1, features.shape[0])
-            new_block.add_gradient("positions", new_gradient_samples, gradient_data)
+            gradient_data = ops.vstack(gradient_data).reshape(-1, 3, features.shape[0])
+            new_block.add_gradient(
+                "positions", gradient_data, new_gradient_samples, gradient.components
+            )
 
         blocks.append(new_block)
 

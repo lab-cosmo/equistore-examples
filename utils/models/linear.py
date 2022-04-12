@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from .utils import invariant_block_to_2d_array, structure_sum, normalize
+from .utils import structure_sum, normalize
 import utils.models.operations as ops
 
 
@@ -20,7 +20,9 @@ class LinearModel:
             ps_per_structure = normalize(ps_per_structure)
 
         block = ps_per_structure.block()
-        X = invariant_block_to_2d_array(block)
+        assert len(block.components) == 0
+
+        X = block.values
 
         self.baseline = energies.mean()
         Y = energies.reshape(-1, 1) - self.baseline
@@ -39,8 +41,8 @@ class LinearModel:
         )
 
         if forces is not None:
-            gradient_samples, X_grad = block.gradient("positions")
-            X_grad = X_grad.reshape(-1, X.shape[1])
+            gradient = block.gradient("positions")
+            X_grad = gradient.data.reshape(3 * len(gradient.samples), X.shape[1])
 
             energy_grad = -forces.reshape(X_grad.shape[0], 1)
 
@@ -80,13 +82,15 @@ class LinearModel:
             ps_per_structure = normalize(ps_per_structure)
 
         block = ps_per_structure.block()
-        X = invariant_block_to_2d_array(block)
+        assert len(block.components) == 0
+
+        X = block.values
 
         energies = X @ self.weights + self.baseline
 
         if with_forces:
-            gradient_samples, X_grad = block.gradient("positions")
-            X_grad = X_grad.reshape(-1, self.weights.shape[0])
+            gradient = block.gradient("positions")
+            X_grad = gradient.data.reshape(-1, 3, self.weights.shape[0])
 
             forces = -X_grad @ self.weights
             forces = forces.reshape(-1, 3)

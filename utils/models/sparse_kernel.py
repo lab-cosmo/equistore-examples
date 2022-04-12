@@ -5,23 +5,24 @@ import skcosmo.sample_selection
 
 from aml_storage import Descriptor, Labels, Block
 
-from .utils import invariant_block_to_2d_array, array_2d_to_invariant
 from .utils import structure_sum, dot, power, normalize, detach
 import utils.models.operations as ops
 
 
 def _select_support_points_for_block(block: Block, n_select: int):
+    assert len(block.components) == 0
+
     fps = skcosmo.sample_selection.FPS(n_to_select=n_select)
 
-    array = invariant_block_to_2d_array(block)
+    array = block.values
     if isinstance(array, torch.Tensor):
         array = array.detach()
     fps.fit_transform(array)
 
     return Block(
-        values=array_2d_to_invariant(array)[fps.selected_idx_],
+        values=array[fps.selected_idx_],
         samples=block.samples[fps.selected_idx_],
-        components=Labels.single(),
+        components=block.components,
         features=block.features,
     )
 
@@ -58,7 +59,8 @@ class SparseKernelGap:
         k_mm = self._compute_kernel(self.support_points)
         K_MM = []
         for _, k_mm_block in k_mm:
-            K_MM.append(invariant_block_to_2d_array(k_mm_block))
+            assert len(k_mm_block.components) == 0
+            K_MM.append(k_mm_block.values)
 
         K_MM = ops.block_diag(*K_MM)
         K_MM[np.diag_indices_from(K_MM)] += self.jitter
@@ -73,7 +75,8 @@ class SparseKernelGap:
             k_nm.sparse_to_features(names)
 
         k_nm = k_nm.block()
-        K_NM = invariant_block_to_2d_array(k_nm)
+        assert len(k_nm.components) == 0
+        K_NM = k_nm.values
 
         self.baseline = energies.mean()
 
@@ -95,8 +98,10 @@ class SparseKernelGap:
         Y = (energies.reshape(-1, 1) - self.baseline) / energy_regularizer[:, None]
 
         if forces is not None:
-            _, k_nm_grad = k_nm.gradient("positions")
-            k_nm_grad = k_nm_grad.reshape(k_nm_grad.shape[0], k_nm_grad.shape[2])
+            k_nm_gradient = k_nm.gradient("positions")
+            k_nm_grad = k_nm_gradient.data.reshape(
+                3 * k_nm_gradient.data.shape[0], k_nm_gradient.data.shape[2]
+            )
 
             forces_regularizer = self.regularizer[1] / delta
             k_nm_grad[:] /= forces_regularizer
@@ -123,15 +128,15 @@ class SparseKernelGap:
             names = list(k_per_structure.sparse.names)
             k_per_structure.sparse_to_features(names)
 
-        kernel = invariant_block_to_2d_array(k_per_structure.block())
+        assert len(k_per_structure.block().components) == 0
+        kernel = k_per_structure.block().values
 
         energies = kernel @ self.weights + self.baseline
 
         if with_forces:
-            _, kernel_grad = k_per_structure.block().gradient("positions")
-            kernel_grad = kernel_grad.reshape(-1, self.weights.shape[0])
+            kernel_gradient = k_per_structure.block().gradient("positions")
 
-            forces = -kernel_grad @ self.weights
+            forces = -kernel_gradient.data @ self.weights
             forces = forces.reshape(-1, 3)
         else:
             forces = None

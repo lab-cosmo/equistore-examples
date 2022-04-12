@@ -9,8 +9,9 @@ def write(path, descriptor, dtype="default"):
     with h5py.File(path, mode="w", track_order=True) as file:
         _write_labels(file, "sparse", descriptor.sparse)
 
+        blocks = file.create_group("blocks")
         for i, (_, block) in enumerate(descriptor):
-            _write_block(file, f"block-{i}", block)
+            _write_block(blocks, str(i), block)
 
 
 def _write_labels(h5_group, name, labels):
@@ -30,7 +31,11 @@ def _write_block(root, name, block):
         data=block.values,
     )
     _write_labels(group, "samples", block.samples)
-    _write_labels(group, "components", block.components)
+    components = block.components
+    if components:
+        component_group = group.create_group("components")
+        for i, component in enumerate(components):
+            _write_labels(component_group, str(i), component)
     _write_labels(group, "features", block.features)
 
     if len(block.gradients_list()) == 0:
@@ -38,17 +43,21 @@ def _write_block(root, name, block):
 
     gradients = group.create_group("gradients")
     for parameter in block.gradients_list():
-        gradient_sample, gradient_data = block.gradient(parameter)
+        gradient = block.gradient(parameter)
 
         group = gradients.create_group(parameter)
 
         group.create_dataset(
             "data",
-            data=gradient_data,
+            data=gradient.data,
         )
-        _write_labels(group, "samples", gradient_sample)
-        _write_labels(group, "components", block.components)
-        _write_labels(group, "features", block.features)
+        _write_labels(group, "samples", gradient.samples)
+        components = gradient.components
+        if components:
+            component_group = group.create_group("components")
+            for i, component in enumerate(components):
+                _write_labels(component_group, str(i), component)
+        _write_labels(group, "features", gradient.features)
 
 
 def read(path):
@@ -58,14 +67,19 @@ def read(path):
 
         blocks = []
         for i in range(len(sparse)):
-            h5_block = file[f"block-{i}"]
+            h5_block = file[f"blocks/{i}"]
 
             values = np.array(h5_block["values"])
             samples = h5_block["samples"]
             samples = Labels(samples.attrs["names"], np.array(samples))
 
-            components = h5_block["components"]
-            components = Labels(components.attrs["names"], np.array(components))
+            components = []
+            if "components" in h5_block:
+                for i in range(len(h5_block["components"])):
+                    component = h5_block[f"components/{i}"]
+                    components.append(
+                        Labels(component.attrs["names"], np.array(component))
+                    )
 
             features = h5_block["features"]
             features = Labels(features.attrs["names"], np.array(features))
@@ -80,9 +94,17 @@ def read(path):
                     samples = grad_block["samples"]
                     samples = Labels(samples.attrs["names"], np.array(samples))
 
+                    components = []
+                    if "components" in grad_block:
+                        for i in range(len(grad_block["components"])):
+                            component = grad_block[f"components/{i}"]
+                            components.append(
+                                Labels(component.attrs["names"], np.array(component))
+                            )
+
                     # skip components & features for now
 
-                    block.add_gradient(parameter, samples, data)
+                    block.add_gradient(parameter, data, samples, components)
 
             blocks.append(block)
 
