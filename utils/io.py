@@ -5,7 +5,9 @@ from aml_storage import Labels, Block, Descriptor
 
 
 def write(path, descriptor, dtype="default"):
-    path += '.h5' * (not path.endswith('.h5'))
+    if not path.endswith(".h5"):
+        path += ".h5"
+
     with h5py.File(path, mode="w", track_order=True) as file:
         _write_labels(file, "sparse", descriptor.sparse)
 
@@ -15,10 +17,12 @@ def write(path, descriptor, dtype="default"):
 
 
 def _write_labels(h5_group, name, labels):
-    dataset = h5_group.create_dataset(
-        name,
-        data=labels.view(dtype="int32").reshape(len(labels), -1),
-    )
+    if len(labels) == 0:
+        data = np.zeros((0, len(labels.names)), dtype=np.int32)
+    else:
+        data = labels.view(dtype="int32").reshape(len(labels), -1)
+
+    dataset = h5_group.create_dataset(name, data=data)
 
     dataset.attrs["names"] = labels.names
 
