@@ -7,6 +7,18 @@ import utils.models.operations as ops
 
 
 def compute_power_spectrum(spherical_expansion):
+    """
+    Starting from spherical expansion coefficients obtained from an
+    external code (e.g. rascaline or also librascal/pyLODE after converting
+    to the proper storage format) generate the rotationally invariant
+    power spectrum.
+    Returns:
+    --------
+    A Descriptor object containing the invariant features and all its
+    associated labels.
+    """
+    # Make sure that the expansion coefficients have the correct
+    # set of sparse labels associated with 1-center expansion coefficients.
     assert spherical_expansion.sparse.names == (
         "spherical_harmonics_l",
         "center_species",
@@ -24,7 +36,11 @@ def compute_power_spectrum(spherical_expansion):
             # with the same central species, we should have the same samples
             assert np.all(spx_1.samples == spx_2.samples)
 
-            # TODO: explain (symmetry w.r.t. neighbor species exchange)
+            # Avoid doubly computing / storing invariants that are
+            # the same by symmetry of the neighbor species.
+            # Example: Neighbor species (Na, Cl) produces the same
+            # invariants as (Cl, Na), meaning that only one set 
+            # of invariants needs to be used.
             if ns1 > ns2:
                 continue
             elif ns1 == ns2:
@@ -32,6 +48,7 @@ def compute_power_spectrum(spherical_expansion):
             else:
                 factor = sqrt(2) / sqrt(2 * l1 + 1)
 
+            # Get the features and its labels
             features = Labels(
                 names=[f"{name}_1" for name in spx_1.features.names]
                 + [f"{name}_2" for name in spx_2.features.names],
@@ -45,6 +62,7 @@ def compute_power_spectrum(spherical_expansion):
                 ),
             )
 
+            # Compute the invariants by summation and store the results
             data = factor * ops.einsum("ima, imb -> iab", spx_1.values, spx_2.values)
 
             block = Block(
