@@ -57,7 +57,7 @@ def compute_power_spectrum(spherical_expansion_1, spherical_expansion_2=None):
             # Example: Neighbor species (Na, Cl) produces the same
             # invariants as (Cl, Na), meaning that only one set 
             # of invariants needs to be used.
-            # If the two sets of expansion coefficients are fifferent,
+            # If the two sets of expansion coefficients are different,
             # this does not apply
             if ns1 > ns2 and use_same_spherical_expansions:
                 continue
