@@ -3,14 +3,14 @@ import numpy as np
 
 from rascaline import SphericalExpansion
 
-from aml_storage import Labels, Block, Descriptor
+from equistore import Labels, TensorBlock, TensorMap
 
 
 class RascalineSphericalExpansion:
     def __init__(self, hypers):
         self._hypers = copy.deepcopy(hypers)
 
-    def compute(self, frames) -> Descriptor:
+    def compute(self, frames) -> TensorMap:
         max_radial = self._hypers["max_radial"]
         max_angular = self._hypers["max_angular"]
 
@@ -22,7 +22,7 @@ class RascalineSphericalExpansion:
         values = descriptor.values.reshape(descriptor.values.shape[0], -1, max_radial)
 
         species = np.unique(old_samples[["species_center", "species_neighbor"]])
-        sparse = Labels(
+        keys = Labels(
             names=["spherical_harmonics_l", "center_species", "neighbor_species"],
             values=np.array(
                 [
@@ -34,7 +34,7 @@ class RascalineSphericalExpansion:
             ),
         )
 
-        features = Labels(
+        properties = Labels(
             names=["n"],
             values=np.array([[n] for n in range(max_radial)], dtype=np.int32),
         )
@@ -55,7 +55,7 @@ class RascalineSphericalExpansion:
             has_gradients = False
 
         blocks = []
-        for sparse_i, (l, center_species, neighbor_species) in enumerate(sparse):
+        for l, center_species, neighbor_species in keys:
             centers = np.unique(
                 old_samples[old_samples["species_center"] == center_species][
                     ["structure", "center"]
@@ -122,18 +122,18 @@ class RascalineSphericalExpansion:
                     )
                 else:
                     block_gradients = np.zeros(
-                        (0, 3, spherical_component.shape[0], features.shape[0])
+                        (0, 3, spherical_component.shape[0], properties.shape[0])
                     )
                     gradient_samples = Labels(
                         names=["sample", "structure", "atom"],
                         values=np.zeros((0, 3), dtype=np.int32),
                     )
 
-            block = Block(
+            block = TensorBlock(
                 values=block_data,
                 samples=samples,
                 components=[spherical_component],
-                features=features,
+                properties=properties,
             )
 
             if block_gradients is not None:
@@ -151,4 +151,4 @@ class RascalineSphericalExpansion:
 
             blocks.append(block)
 
-        return Descriptor(sparse, blocks)
+        return TensorMap(keys, blocks)

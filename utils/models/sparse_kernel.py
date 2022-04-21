@@ -3,13 +3,13 @@ import torch
 
 import skcosmo.sample_selection
 
-from aml_storage import Descriptor, Labels, Block
+from equistore import Labels, TensorBlock, TensorMap
 
 from .utils import structure_sum, dot, power, normalize, detach
 import utils.models.operations as ops
 
 
-def _select_support_points_for_block(block: Block, n_select: int):
+def _select_support_points_for_block(block: TensorBlock, n_select: int):
     assert len(block.components) == 0
 
     fps = skcosmo.sample_selection.FPS(n_to_select=n_select)
@@ -19,11 +19,11 @@ def _select_support_points_for_block(block: Block, n_select: int):
         array = array.detach()
     fps.fit_transform(array)
 
-    return Block(
+    return TensorBlock(
         values=array[fps.selected_idx_],
         samples=block.samples[fps.selected_idx_],
         components=block.components,
-        features=block.features,
+        properties=block.properties,
     )
 
 
@@ -31,7 +31,7 @@ def select_support_points(ps, n_select):
     if isinstance(n_select, int):
         block = _select_support_points_for_block(ps.block(), n_select)
 
-        return Descriptor(Labels.single(), [block])
+        return TensorMap(Labels.single(), [block])
 
     else:
         blocks = []
@@ -42,7 +42,7 @@ def select_support_points(ps, n_select):
             )
             blocks.append(block)
 
-        return Descriptor(ps.sparse, blocks)
+        return TensorMap(ps.keys, blocks)
 
 
 class SparseKernelGap:
@@ -66,13 +66,13 @@ class SparseKernelGap:
         K_MM[np.diag_indices_from(K_MM)] += self.jitter
 
         k_nm = self._compute_kernel(ps)
-        k_nm = structure_sum(k_nm, sum_features=False)
+        k_nm = structure_sum(k_nm, sum_properties=False)
 
         # TODO: make sure this create an array in the same order as
         # `scipy.linalg.block_diag` above
-        if len(k_nm.sparse.names) != 0:
-            names = list(k_nm.sparse.names)
-            k_nm.sparse_to_features(names)
+        if len(k_nm.keys.names) != 0:
+            names = list(k_nm.keys.names)
+            k_nm.keys_to_properties(names)
 
         k_nm = k_nm.block()
         assert len(k_nm.components) == 0
@@ -122,11 +122,11 @@ class SparseKernelGap:
             raise Exception("call fit first")
 
         k_per_atom = self._compute_kernel(ps)
-        k_per_structure = structure_sum(k_per_atom, sum_features=False)
+        k_per_structure = structure_sum(k_per_atom, sum_properties=False)
         # TODO: make sure this create an array in the same order as block_diag above
-        if len(k_per_structure.sparse.names) != 0:
-            names = list(k_per_structure.sparse.names)
-            k_per_structure.sparse_to_features(names)
+        if len(k_per_structure.keys.names) != 0:
+            names = list(k_per_structure.keys.names)
+            k_per_structure.keys_to_properties(names)
 
         assert len(k_per_structure.block().components) == 0
         kernel = k_per_structure.block().values

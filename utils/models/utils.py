@@ -1,13 +1,14 @@
 import numpy as np
 import torch
-from aml_storage import Block, Labels, Descriptor
+
+from equistore import Labels, TensorBlock, TensorMap
 
 import utils.models.operations as ops
 
 
 def normalize(descriptor):
     blocks = []
-    for sparse, block in descriptor:
+    for _, block in descriptor:
         # only deal with invariants for now
         assert len(block.components) == 0
         assert len(block.values.shape) == 2
@@ -15,11 +16,11 @@ def normalize(descriptor):
         norm = ops.norm(block.values, axis=1)
         normalized_values = block.values / norm[:, None]
 
-        new_block = Block(
+        new_block = TensorBlock(
             values=normalized_values,
             samples=block.samples,
             components=[],
-            features=block.features,
+            properties=block.properties,
         )
 
         if block.has_gradient("positions"):
@@ -42,34 +43,34 @@ def normalize(descriptor):
 
         blocks.append(new_block)
 
-    return Descriptor(descriptor.sparse, blocks)
+    return TensorMap(descriptor.keys, blocks)
 
 
 def dot(lhs_descriptor, rhs_descriptor, do_normalize=True):
-    assert len(lhs_descriptor.sparse) == len(rhs_descriptor.sparse)
-    if len(lhs_descriptor.sparse) != 0:
-        assert np.all(lhs_descriptor.sparse == rhs_descriptor.sparse)
+    assert len(lhs_descriptor.keys) == len(rhs_descriptor.keys)
+    if len(lhs_descriptor.keys) != 0:
+        assert np.all(lhs_descriptor.keys == rhs_descriptor.keys)
 
     if do_normalize:
         lhs_descriptor = normalize(lhs_descriptor)
 
     blocks = []
-    for sparse, lhs in lhs_descriptor:
-        rhs = rhs_descriptor.block(sparse)
-        assert np.all(lhs.features == rhs.features)
+    for key, lhs in lhs_descriptor:
+        rhs = rhs_descriptor.block(key)
+        assert np.all(lhs.properties == rhs.properties)
 
         # only deal with invariants for now
         assert len(lhs.components) == 0
         assert len(rhs.components) == 0
 
         samples = lhs.samples
-        features = rhs.samples
+        properties = rhs.samples
 
-        block = Block(
+        block = TensorBlock(
             values=lhs.values @ rhs.values.T,
             samples=samples,
             components=[],
-            features=features,
+            properties=properties,
         )
 
         if lhs.has_gradient("positions"):
@@ -89,7 +90,7 @@ def dot(lhs_descriptor, rhs_descriptor, do_normalize=True):
 
         blocks.append(block)
 
-    return Descriptor(lhs_descriptor.sparse, blocks)
+    return TensorMap(lhs_descriptor.keys, blocks)
 
 
 def power(descriptor, zeta):
@@ -97,11 +98,11 @@ def power(descriptor, zeta):
 
     blocks = []
     for _, block in descriptor:
-        new_block = Block(
+        new_block = TensorBlock(
             ops.float_power(block.values, zeta),
             block.samples,
             block.components,
-            block.features,
+            block.properties,
         )
 
         if block.has_gradient("positions"):
@@ -125,10 +126,10 @@ def power(descriptor, zeta):
 
         blocks.append(new_block)
 
-    return Descriptor(descriptor.sparse, blocks)
+    return TensorMap(descriptor.keys, blocks)
 
 
-def structure_sum(descriptor, sum_features=False):
+def structure_sum(descriptor, sum_properties=False):
     blocks = []
     for _, block in descriptor:
 
@@ -137,13 +138,13 @@ def structure_sum(descriptor, sum_features=False):
 
         structures = np.unique(block.samples["structure"])
 
-        if sum_features:
-            ref_structures = np.unique(block.features["structure"])
-            features = Labels(["structure"], ref_structures.reshape(-1, 1))
+        if sum_properties:
+            ref_structures = np.unique(block.properties["structure"])
+            properties = Labels(["structure"], ref_structures.reshape(-1, 1))
         else:
-            features = block.features
+            properties = block.properties
 
-        result = ops.zeros_like(block.values, (len(structures), features.shape[0]))
+        result = ops.zeros_like(block.values, (len(structures), properties.shape[0]))
 
         if block.has_gradient("positions"):
             do_gradients = True
@@ -161,7 +162,7 @@ def structure_sum(descriptor, sum_features=False):
                 gradient_data.append(
                     ops.zeros_like(
                         gradient.data,
-                        (len(atoms), 3, features.shape[0]),
+                        (len(atoms), 3, properties.shape[0]),
                     )
                 )
 
@@ -182,12 +183,12 @@ def structure_sum(descriptor, sum_features=False):
         else:
             do_gradients = False
 
-        if sum_features:
+        if sum_properties:
             for structure_i, s1 in enumerate(structures):
                 s1_idx = block.samples["structure"] == s1
 
                 for structure_j, s2 in enumerate(ref_structures):
-                    s2_idx = block.features["structure"] == s2
+                    s2_idx = block.properties["structure"] == s2
                     result[structure_i, structure_j] = ops.sum(
                         block.values[s1_idx, :][:, s2_idx]
                     )
@@ -220,22 +221,24 @@ def structure_sum(descriptor, sum_features=False):
                             sample_i, :, :
                         ]
 
-        new_block = Block(
+        new_block = TensorBlock(
             values=result,
             samples=Labels(["structure"], structures.reshape(-1, 1)),
             components=[],
-            features=features,
+            properties=properties,
         )
 
         if do_gradients:
-            gradient_data = ops.vstack(gradient_data).reshape(-1, 3, features.shape[0])
+            gradient_data = ops.vstack(gradient_data).reshape(
+                -1, 3, properties.shape[0]
+            )
             new_block.add_gradient(
                 "positions", gradient_data, new_gradient_samples, gradient.components
             )
 
         blocks.append(new_block)
 
-    return Descriptor(sparse=descriptor.sparse, blocks=blocks)
+    return TensorMap(keys=descriptor.keys, blocks=blocks)
 
 
 def detach(descriptor):
@@ -243,13 +246,13 @@ def detach(descriptor):
         blocks = []
         for _, block in descriptor:
             blocks.append(
-                Block(
+                TensorBlock(
                     values=block.values.detach(),
                     samples=block.samples,
                     components=block.components,
-                    features=block.features,
+                    properties=block.properties,
                 )
             )
-        descriptor = Descriptor(descriptor.sparse, blocks)
+        descriptor = TensorMap(descriptor.keys, blocks)
 
     return descriptor

@@ -5,7 +5,7 @@ import numpy as np
 import ase
 from pylode import DensityProjectionCalculator
 
-from aml_storage import Labels, Block, Descriptor
+from equistore import Labels, TensorBlock, TensorMap
 
 
 class PyLODESphericalExpansion:
@@ -14,7 +14,7 @@ class PyLODESphericalExpansion:
 
     def compute(
         self, frames: List[ase.Atoms], show_progress: bool = False
-    ) -> Descriptor:
+    ) -> TensorMap:
         # Step 1: compute spherical expansion with pylode
         hypers = copy.deepcopy(self._hypers)
         global_species = list(
@@ -40,7 +40,7 @@ class PyLODESphericalExpansion:
             ),
         )
 
-        features = Labels(
+        properties = Labels(
             names=["n"],
             values=np.array([[n] for n in range(hypers["max_radial"])], dtype=np.int32),
         )
@@ -107,18 +107,18 @@ class PyLODESphericalExpansion:
                     )
                 else:
                     block_gradients = np.zeros(
-                        (0, 3, spherical_component.shape[0], features.shape[0])
+                        (0, 3, spherical_component.shape[0], properties.shape[0])
                     )
                     gradient_samples = Labels(
                         names=["sample", "structure", "atom"],
                         values=np.zeros((0, 3), dtype=np.int32),
                     )
 
-            block = Block(
+            block = TensorBlock(
                 values=np.copy(block_data),
                 samples=samples,
                 components=[spherical_component],
-                features=features,
+                properties=properties,
             )
 
             spatial_component = Labels(
@@ -134,4 +134,4 @@ class PyLODESphericalExpansion:
 
             blocks.append(block)
 
-        return Descriptor(sparse, blocks)
+        return TensorMap(sparse, blocks)

@@ -8,14 +8,14 @@ import warnings
 import ase
 from rascal.representations import SphericalExpansion
 
-from aml_storage import Labels, Block, Descriptor
+from equistore import Labels, TensorBlock, TensorMap
 
 
 class RascalSphericalExpansion:
     def __init__(self, hypers):
         self._hypers = copy.deepcopy(hypers)
 
-    def compute(self, frames: List[ase.Atoms]) -> Descriptor:
+    def compute(self, frames: List[ase.Atoms]) -> TensorMap:
         # Step 1: compute spherical expansion with librascal
         hypers = copy.deepcopy(self._hypers)
         global_species = list(
@@ -33,7 +33,7 @@ class RascalSphericalExpansion:
         grad_info = manager.get_gradients_info()
 
         # Step 2: move data around to follow the storage convention
-        sparse = Labels(
+        keys = Labels(
             names=["spherical_harmonics_l", "center_species", "neighbor_species"],
             values=np.array(
                 [
@@ -46,7 +46,7 @@ class RascalSphericalExpansion:
             ),
         )
 
-        features = Labels(
+        properties = Labels(
             names=["n"],
             values=np.array([[n] for n in range(hypers["max_radial"])], dtype=np.int32),
         )
@@ -71,7 +71,7 @@ class RascalSphericalExpansion:
                 global_to_per_structure_atom_id.append(i)
 
         blocks = []
-        for sparse_i, (l, center_species, neighbor_species) in enumerate(sparse):
+        for l, center_species, neighbor_species in keys:
             neighbor_species_i = global_species.index(neighbor_species)
             center_species_mask = np.where(info[:, 2] == center_species)[0]
             block_data = data[center_species_mask, neighbor_species_i, :, lm_slices[l]]
@@ -136,7 +136,7 @@ class RascalSphericalExpansion:
                     )
                 else:
                     block_gradients = np.zeros(
-                        (0, 3, spherical_component.shape[0], features.shape[0])
+                        (0, 3, spherical_component.shape[0], properties.shape[0])
                     )
                     gradient_samples = Labels(
                         names=["sample", "structure", "atom"],
@@ -155,11 +155,11 @@ class RascalSphericalExpansion:
                 ),
             )
 
-            block = Block(
+            block = TensorBlock(
                 values=np.copy(block_data),
                 samples=samples,
                 components=[spherical_component],
-                features=features,
+                properties=properties,
             )
 
             spatial_component = Labels(
@@ -178,14 +178,14 @@ class RascalSphericalExpansion:
 
             blocks.append(block)
 
-        return Descriptor(sparse, blocks)
+        return TensorMap(keys, blocks)
 
 
 class RascalPairExpansion:
     def __init__(self, hypers):
         self._hypers = copy.deepcopy(hypers)
 
-    def compute(self, frames: List[ase.Atoms]) -> Descriptor:
+    def compute(self, frames: List[ase.Atoms]) -> TensorMap:
         # Step 1: compute spherical expansion with librascal
         hypers = copy.deepcopy(self._hypers)
         if hypers["compute_gradients"]:
@@ -206,7 +206,7 @@ class RascalPairExpansion:
         calculator = SphericalExpansion(**hypers)
 
         # Step 2: move data around to follow the storage convention
-        sparse = Labels(
+        keys = Labels(
             names=["spherical_harmonics_l"],
             values=np.array(
                 [[l] for l in range(hypers["max_angular"] + 1)],
@@ -214,7 +214,7 @@ class RascalPairExpansion:
             ),
         )
 
-        features = Labels(
+        properties = Labels(
             names=["n"],
             values=np.array([[n] for n in range(hypers["max_radial"])], dtype=np.int32),
         )
@@ -248,7 +248,7 @@ class RascalPairExpansion:
             values=np.concatenate(samples).astype(np.int32),
         )
         blocks = []
-        for (l,) in sparse:
+        for (l,) in keys:
             block_data = data[..., lm_slices[l]]
             block_data = block_data.swapaxes(1, 2)
 
@@ -257,16 +257,16 @@ class RascalPairExpansion:
                 values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
 
-            block = Block(
+            block = TensorBlock(
                 values=np.copy(block_data),
                 samples=samples,
                 components=[component],
-                features=features,
+                properties=properties,
             )
 
             blocks.append(block)
 
-        return Descriptor(sparse, blocks)
+        return TensorMap(keys, blocks)
 
 
 class SphericalExpansionAutograd(torch.autograd.Function):
@@ -337,7 +337,7 @@ class RascalSphericalExpansionTorch:
     def __init__(self, hypers):
         self._hypers = copy.deepcopy(hypers)
 
-    def compute(self, frames: List[TorchFrame]) -> Descriptor:
+    def compute(self, frames: List[TorchFrame]) -> TensorMap:
         # Step 1: compute spherical expansion with librascal
         hypers = copy.deepcopy(self._hypers)
         global_species = list(
@@ -366,7 +366,7 @@ class RascalSphericalExpansionTorch:
         info = np.vstack(all_info)
 
         # Step 2: move data around to follow the storage convention
-        sparse = Labels(
+        keys = Labels(
             names=["spherical_harmonics_l", "center_species", "neighbor_species"],
             values=np.array(
                 [
@@ -379,7 +379,7 @@ class RascalSphericalExpansionTorch:
             ),
         )
 
-        features = Labels(
+        properties = Labels(
             names=["n"],
             values=np.array([[n] for n in range(hypers["max_radial"])], dtype=np.int32),
         )
@@ -396,7 +396,7 @@ class RascalSphericalExpansionTorch:
         )
 
         blocks = []
-        for sparse_i, (l, center_species, neighbor_species) in enumerate(sparse):
+        for l, center_species, neighbor_species in keys:
             neighbor_species_i = global_species.index(neighbor_species)
             center_species_mask = np.where(info[:, 2] == center_species)[0]
             block_data = data[center_species_mask, neighbor_species_i, :, lm_slices[l]]
@@ -412,12 +412,12 @@ class RascalSphericalExpansionTorch:
             )
 
             blocks.append(
-                Block(
+                TensorBlock(
                     values=block_data,
                     samples=samples,
                     components=[component],
-                    features=features,
+                    properties=properties,
                 )
             )
 
-        return Descriptor(sparse, blocks)
+        return TensorMap(keys, blocks)

@@ -52,5 +52,5 @@ class FullKernelGap:
 
     def _compute_kernel(self, ps):
         return structure_sum(
-            power(dot(ps, self.training_points), zeta=self.zeta), sum_features=True
+            power(dot(ps, self.training_points), zeta=self.zeta), sum_properties=True
         )

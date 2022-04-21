@@ -1,7 +1,7 @@
 import numpy as np
 import h5py
 
-from aml_storage import Labels, Block, Descriptor
+from equistore import Labels, TensorBlock, TensorMap
 
 
 def write(path, descriptor, dtype="default"):
@@ -9,7 +9,7 @@ def write(path, descriptor, dtype="default"):
         path += ".h5"
 
     with h5py.File(path, mode="w", track_order=True) as file:
-        _write_labels(file, "sparse", descriptor.sparse)
+        _write_labels(file, "keys", descriptor.keys)
 
         blocks = file.create_group("blocks")
         for i, (_, block) in enumerate(descriptor):
@@ -40,7 +40,7 @@ def _write_block(root, name, block):
         component_group = group.create_group("components")
         for i, component in enumerate(components):
             _write_labels(component_group, str(i), component)
-    _write_labels(group, "features", block.features)
+    _write_labels(group, "properties", block.properties)
 
     if len(block.gradients_list()) == 0:
         return
@@ -61,16 +61,16 @@ def _write_block(root, name, block):
             component_group = group.create_group("components")
             for i, component in enumerate(components):
                 _write_labels(component_group, str(i), component)
-        _write_labels(group, "features", gradient.features)
+        _write_labels(group, "properties", gradient.properties)
 
 
 def read(path):
     with h5py.File(path, mode="r") as file:
-        sparse = file["sparse"]
-        sparse = Labels(sparse.attrs["names"], np.array(sparse))
+        keys = file["keys"]
+        keys = Labels(keys.attrs["names"], np.array(keys))
 
         blocks = []
-        for i in range(len(sparse)):
+        for i in range(len(keys)):
             h5_block = file[f"blocks/{i}"]
 
             values = np.array(h5_block["values"])
@@ -85,10 +85,10 @@ def read(path):
                         Labels(component.attrs["names"], np.array(component))
                     )
 
-            features = h5_block["features"]
-            features = Labels(features.attrs["names"], np.array(features))
+            properties = h5_block["properties"]
+            properties = Labels(properties.attrs["names"], np.array(properties))
 
-            block = Block(values, samples, components, features)
+            block = TensorBlock(values, samples, components, properties)
 
             if "gradients" in h5_block:
                 gradients = h5_block["gradients"]
@@ -106,10 +106,10 @@ def read(path):
                                 Labels(component.attrs["names"], np.array(component))
                             )
 
-                    # skip components & features for now
+                    # skip components & properties for now
 
                     block.add_gradient(parameter, data, samples, components)
 
             blocks.append(block)
 
-    return Descriptor(sparse, blocks)
+    return TensorMap(keys, blocks)
