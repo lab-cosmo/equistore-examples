@@ -17,7 +17,6 @@ class DescriptorBuilder:
         samples = Labels(self._sample_names, samples)
 
         if all([isinstance(component, Labels) for component in components]):
-        #if isinstance(components, Labels):
             components = [component.view(dtype=np.int32).reshape(components.shape[0], -1) for components in components]
                 
         components_label = []
@@ -52,7 +51,6 @@ class DescriptorBuilder:
                 raise Exception("must pass gradient samples for the moment")
         
         if all([isinstance(component, Labels) for component in components]):
-        #if isinstance(components, Labels):
             components = [component.view(dtype=np.int32).reshape(components.shape[0], -1) for components in components]
                 
         components_label = []
@@ -105,7 +103,6 @@ class DescriptorBuilder:
 class BlockBuilderPerSamples:
     def __init__(self, properties, components, sample_names, gradient_samples=None):
         assert isinstance(properties, Labels)
-        #assert isinstance(components, Labels)
         assert all([isinstance(component, Labels) for component in components])
         assert (gradient_samples is None) or isinstance(gradient_samples, Labels)
         self._gradient_samples = gradient_samples
@@ -124,8 +121,6 @@ class BlockBuilderPerSamples:
         for i in range(len(self._components)):
             assert data.shape[i+1] == self._components[i].shape[0]
            
-        #assert data.shape[1] == self._components.shape[0]
-
         labels = np.asarray(labels, dtype=np.int32)        
         if len(data.shape) == 2:
             data = data.reshape(1, data.shape[0], data.shape[1])            
@@ -170,7 +165,6 @@ class BlockBuilderPerProperties:
     def __init__(self, samples, components, property_names, gradient_samples=None):
         assert isinstance(samples, Labels)
         assert all([isinstance(component, Labels) for component in components])
-        #assert isinstance(components, Labels)
         assert (gradient_samples is None) or isinstance(gradient_samples, Labels)
         self._gradient_samples = gradient_samples
         self._samples = samples
@@ -187,7 +181,6 @@ class BlockBuilderPerProperties:
         assert data.shape[0] == self._samples.shape[0]
         for i in range(len(self._components)):
             assert data.shape[i+1] == self._components[i].shape[0]
-        #assert data.shape[1] == self._components.shape[0]
 
         labels = np.asarray(labels)
         if len(data.shape) == 2:

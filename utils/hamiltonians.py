@@ -115,7 +115,6 @@ def dense_to_blocks(dense, frames, orbs):
                             continue
                         block_idx = (block_type, ai, ni, li, aj, nj, lj)
                         if block_idx not in block_builder.blocks:
-                            #print([_components_idx(li),_components_idx(lj)])
                             block = block_builder.add_block(sparse=block_idx, properties=np.asarray([[0]], dtype=np.int32),
                                             components=[_components_idx(li), _components_idx(lj)] )
                             
@@ -129,7 +128,6 @@ def dense_to_blocks(dense, frames, orbs):
                         
                         islice = slice(ki_offset,ki_offset+2*li+1)
                         jslice = slice(kj_offset,kj_offset+2*lj+1)
-                        #print(li,lj,islice,jslice)
                         
                         if block_type == 1:
                             block.add_samples(labels=[(A,i,j)],data=block_data_plus[islice, jslice].reshape((1,2*li+1,2*lj+1,1)) )
@@ -187,7 +185,6 @@ def blocks_to_dense(blocks, frames, orbs):
 
             # print(i, ni, li, ki_base, ki_offset)
             if block_type == 0:
-                #print(block_data.shape,block_data[:,0].shape)
                 ham[islice, jslice] = block_data[:,:,0].reshape(2*li+1,2*lj+1)
                 if ki_offset != kj_offset:
                     ham[jslice, islice] = block_data[:,:,0].reshape(2*li+1,2*lj+1).T
@@ -258,5 +255,4 @@ def decouple_blocks(blocks, cg=None):
                             components=[_components_idx(li), _components_idx(lj)] )
         new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1),
                             data=np.moveaxis(decoupled, 1, -1))
-                            #data=np.moveaxis(decoupled.reshape(decoupled.shape[:2]+(-1,)), -1, -2 ) )         
     return block_builder.build()    
