@@ -17,9 +17,15 @@ class PyLODESphericalExpansion:
     ) -> TensorMap:
         # Step 1: compute spherical expansion with pylode
         hypers = copy.deepcopy(self._hypers)
-        global_species = list(
-            map(int, np.unique(np.concatenate([f.numbers for f in frames])))
-        )
+        
+        if isinstance(frames,list):
+            global_species = list(
+                map(int, np.unique(np.concatenate([f.numbers for f in frames])))
+            )
+        else:
+            global_species = list(
+                map(int, np.unique(np.concatenate([f.numbers for f in [frames]])))
+            )
 
         calculator = DensityProjectionCalculator(**hypers)
         calculator.transform(frames, show_progress=show_progress)
