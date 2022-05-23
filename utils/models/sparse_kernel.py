@@ -53,7 +53,6 @@ class SparseKernelGap:
         self.support_points = normalize(detach(support_points))
 
         self.weights = None
-        self.baseline = None
 
     def fit(self, ps, energies, forces=None):
         k_mm = self._compute_kernel(self.support_points)
@@ -78,8 +77,6 @@ class SparseKernelGap:
         assert len(k_nm.components) == 0
         K_NM = k_nm.values
 
-        self.baseline = energies.mean()
-
         delta = energies.std()
         structures = np.unique(k_nm.samples["structure"])
         n_atoms_per_structure = []
@@ -95,7 +92,7 @@ class SparseKernelGap:
 
         K_NM[:] /= energy_regularizer[:, None]
 
-        Y = (energies.reshape(-1, 1) - self.baseline) / energy_regularizer[:, None]
+        Y = energies.reshape(-1, 1) / energy_regularizer[:, None]
 
         if forces is not None:
             k_nm_gradient = k_nm.gradient("positions")
@@ -131,7 +128,7 @@ class SparseKernelGap:
         assert len(k_per_structure.block().components) == 0
         kernel = k_per_structure.block().values
 
-        energies = kernel @ self.weights + self.baseline
+        energies = kernel @ self.weights
 
         if with_forces:
             kernel_gradient = k_per_structure.block().gradient("positions")
