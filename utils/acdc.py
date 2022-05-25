@@ -151,9 +151,14 @@ def cg_combine(
     X_blocks = {(S, L, NU): [] for L in range(lcut + 1) for S in [-1, 1]}
     X_idx = {(S, L, NU): [] for L in range(lcut + 1) for S in [-1, 1]}
 
-    # NB : assumes the samples are matching. we could add some kind of
+    # NB : assumes the samples are matching between different blocks. we could add some kind of
     # validation, at least on size if not on content
-    samples = x_a.block(0).samples
+    samples_a = x_a.block(0).samples
+    samples_b = x_b.block(0).samples
+    if samples_a.shape != samples_b.shape:
+        raise Exception("Mixed-samples combination not implemented")
+    else:
+        samples = samples_a        
     if x_a.block(0).has_gradient("positions"):
         grad_samples, _ = x_a.block(0).gradient("positions")
         X_grads = {(S, L, NU): [] for L in range(lcut + 1) for S in [-1, 1]}
