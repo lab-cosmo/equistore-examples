@@ -1,43 +1,45 @@
 import numpy as np
-from aml_storage import Labels, Block, Descriptor
+from equistore import Labels, TensorBlock, TensorMap
 
 
 class DescriptorBuilder:
-    def __init__(self, sparse_names, sample_names, component_names, feature_names):
+    def __init__(self, sparse_names, sample_names, component_names, property_names):
         self._sparse_names = sparse_names
         self.blocks = {}
 
         self._sample_names = sample_names
         self._component_names = component_names
-        self._feature_names = feature_names
+        self._property_names = property_names
 
-    def add_full_block(self, sparse, samples, components, features, data):
+    def add_full_block(self, sparse, samples, components, properties, data):
         if isinstance(samples, Labels):
             samples = samples.view(dtype=np.int32).reshape(samples.shape[0], -1)
         samples = Labels(self._sample_names, samples)
 
-        if isinstance(components, Labels):
-            components = components.view(dtype=np.int32).reshape(
-                components.shape[0], -1
-            )
-        components = Labels(self._component_names, components)
+        if all([isinstance(component, Labels) for component in components]):
+            components = [component.view(dtype=np.int32).reshape(components.shape[0], -1) for components in components]
+                
+        components_label = []
+        for names,values in zip(self._component_names, components):
+            components_label.append(Labels(names,values))
+        components = components_label
 
-        if isinstance(features, Labels):
-            features = features.view(dtype=np.int32).reshape(features.shape[0], -1)
-        features = Labels(self._feature_names, features)
+        if isinstance(properties, Labels):
+            properties = properties.view(dtype=np.int32).reshape(properties.shape[0], -1)
+        properties = Labels(self._property_names, properties)
 
-        block = Block(data, samples, components, features)
+        block = TensorBlock(data, samples, components, properties)
         self.blocks[tuple(sparse)] = block
         return block
 
     def add_block(
-        self, sparse, gradient_samples=None, *, samples=None, components, features=None
+        self, sparse, gradient_samples=None, *, samples=None, components, properties=None
     ):
-        if samples is None and features is None:
-            raise Exception("can not have both samples & features unset")
+        if samples is None and properties is None:
+            raise Exception("can not have both samples & properties unset")
 
-        if samples is not None and features is not None:
-            raise Exception("can not have both samples & features set")
+        if samples is not None and properties is not None:
+            raise Exception("can not have both samples & properties set")
 
         if samples is not None:
             if isinstance(samples, Labels):
@@ -47,42 +49,45 @@ class DescriptorBuilder:
         if gradient_samples is not None:
             if not isinstance(gradient_samples, Labels):
                 raise Exception("must pass gradient samples for the moment")
+        
+        if all([isinstance(component, Labels) for component in components]):
+            components = [component.view(dtype=np.int32).reshape(components.shape[0], -1) for components in components]
+                
+        components_label = []
+        for names,values in zip(self._component_names, components):
+            components_label.append(Labels(names,values))
+        components = components_label
+        
 
-        if isinstance(components, Labels):
-            components = components.view(dtype=np.int32).reshape(
-                components.shape[0], -1
-            )
-        components = Labels(self._component_names, components)
+        if properties is not None:
+            if isinstance(properties, Labels):
+                properties = properties.view(dtype=np.int32).reshape(properties.shape[0], -1)
+            properties = Labels(self._property_names, properties)
 
-        if features is not None:
-            if isinstance(features, Labels):
-                features = features.view(dtype=np.int32).reshape(features.shape[0], -1)
-            features = Labels(self._feature_names, features)
-
-        if features is not None:
+        if properties is not None:
             block = BlockBuilderPerSamples(
-                features, components, self._sample_names, gradient_samples
+                properties, components, self._sample_names, gradient_samples
             )
 
         if samples is not None:
-            block = BlockBuilderPerFeatures(
-                samples, components, self._feature_names, gradient_samples
+            block = BlockBuilderPerProperties(
+                samples, components, self._property_names, gradient_samples
             )
 
         self.blocks[sparse] = block
         return block
 
     def build(self):
-        sparse = Labels(
+        keys = Labels(
             self._sparse_names,
             np.array(list(self.blocks.keys()), dtype=np.int32),
         )
 
         blocks = []
         for block in self.blocks.values():
-            if isinstance(block, Block):
+            if isinstance(block, TensorBlock):
                 blocks.append(block)
-            elif isinstance(block, BlockBuilderPerFeatures):
+            elif isinstance(block, BlockBuilderPerProperties):
                 blocks.append(block.build())
             elif isinstance(block, BlockBuilderPerSamples):
                 blocks.append(block.build())
@@ -92,17 +97,17 @@ class DescriptorBuilder:
 
         self.blocks = {}
 
-        return Descriptor(sparse, blocks)
+        return TensorMap(keys, blocks)
 
 
 class BlockBuilderPerSamples:
-    def __init__(self, features, components, sample_names, gradient_samples=None):
-        assert isinstance(features, Labels)
-        assert isinstance(components, Labels)
+    def __init__(self, properties, components, sample_names, gradient_samples=None):
+        assert isinstance(properties, Labels)
+        assert all([isinstance(component, Labels) for component in components])
         assert (gradient_samples is None) or isinstance(gradient_samples, Labels)
         self._gradient_samples = gradient_samples
-        self._features = features
-        self._components = components
+        self._properties = properties
+        self._components = components 
 
         self._sample_names = sample_names
         self._samples = []
@@ -112,9 +117,10 @@ class BlockBuilderPerSamples:
 
     def add_samples(self, labels, data, gradient=None):
         assert isinstance(data, np.ndarray)
-        assert data.shape[2] == self._features.shape[0]
-        assert data.shape[1] == self._components.shape[0]
-
+        assert data.shape[-1] == self._properties.shape[0]
+        for i in range(len(self._components)):
+            assert data.shape[i+1] == self._components[i].shape[0]
+           
         labels = np.asarray(labels, dtype=np.int32)        
         if len(data.shape) == 2:
             data = data.reshape(1, data.shape[0], data.shape[1])            
@@ -133,11 +139,11 @@ class BlockBuilderPerSamples:
 
     def build(self):
         samples = Labels(self._sample_names, np.vstack(self._samples))
-        block = Block(
+        block = TensorBlock(
             values=np.concatenate(self._data, axis=0),
             samples=samples,
             components=self._components,
-            features=self._features,
+            properties=self._properties,
         )
 
         if self._gradient_samples is not None:
@@ -150,37 +156,38 @@ class BlockBuilderPerSamples:
 
         self._gradient_data = []
         self._data = []
-        self._features = []
+        self._properties = []
 
         return block
 
 
-class BlockBuilderPerFeatures:
-    def __init__(self, samples, components, feature_names, gradient_samples=None):
+class BlockBuilderPerProperties:
+    def __init__(self, samples, components, property_names, gradient_samples=None):
         assert isinstance(samples, Labels)
-        assert isinstance(components, Labels)
+        assert all([isinstance(component, Labels) for component in components])
         assert (gradient_samples is None) or isinstance(gradient_samples, Labels)
         self._gradient_samples = gradient_samples
         self._samples = samples
         self._components = components
 
-        self._feature_names = feature_names
-        self._features = []
+        self._property_names = property_names
+        self._properties = []
 
         self._data = []
         self._gradient_data = []
 
-    def add_features(self, labels, data, gradient=None):
+    def add_properties(self, labels, data, gradient=None):
         assert isinstance(data, np.ndarray)
         assert data.shape[0] == self._samples.shape[0]
-        assert data.shape[1] == self._components.shape[0]
+        for i in range(len(self._components)):
+            assert data.shape[i+1] == self._components[i].shape[0]
 
         labels = np.asarray(labels)
         if len(data.shape) == 2:
             data = data.reshape(data.shape[0], data.shape[1], 1)
         assert data.shape[2] == labels.shape[0]
 
-        self._features.append(labels)
+        self._properties.append(labels)
         self._data.append(data)
 
         if gradient is not None:
@@ -191,12 +198,12 @@ class BlockBuilderPerFeatures:
             self._gradient_data.append(gradient)
 
     def build(self):
-        features = Labels(self._feature_names, np.vstack(self._features))
-        block = Block(
+        properties = Labels(self._property_names, np.vstack(self._properties))
+        block = TensorBlock(
             values=np.concatenate(self._data, axis=2),
             samples=self._samples,
             components=self._components,
-            features=features,
+            properties=properties,
         )
 
         if self._gradient_samples is not None:
@@ -208,6 +215,6 @@ class BlockBuilderPerFeatures:
 
         self._gradient_data = []
         self._data = []
-        self._features = []
+        self._properties = []
 
         return block

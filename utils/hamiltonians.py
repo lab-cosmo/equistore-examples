@@ -26,7 +26,7 @@ def fix_pyscf_l1(dense, frame, orbs):
 
 def _components_idx(l):
     """ just a mini-utility function to get the m=-l..l indices """
-    return np.arange(-l,l+1, dtype=np.int32)
+    return np.arange(-l,l+1, dtype=np.int32).reshape(2*l+1,1)
 
 def _components_idx_2d(li, lj):
     """ indexing the entries in a 2d (l_i, l_j) block of the hamiltonian
@@ -76,7 +76,7 @@ def dense_to_blocks(dense, frames, orbs):
     l_{i,j}: angular momentum
     """
 
-    block_builder = DescriptorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "atom_i", "atom_j"], ["m1", "m2"], ["value"])
+    block_builder = DescriptorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "atom_i", "atom_j"], [["m1"], ["m2"]], ["value"])
     orbs_tot, _ = _orbs_offsets(orbs)
     for A in range(len(frames)):
         frame = frames[A]
@@ -98,6 +98,7 @@ def dense_to_blocks(dense, frames, orbs):
                         continue
                     block_type = 2  # different species
                 block_data = ham[ki_base:ki_base+orbs_tot[ai], kj_base:kj_base+orbs_tot[aj]]
+                #print(block_data, block_data.shape)
                 if block_type == 1:
                     block_data_plus = (block_data + block_data.T) *1/np.sqrt(2)
                     block_data_minus = (block_data - block_data.T) *1/np.sqrt(2)
@@ -114,11 +115,12 @@ def dense_to_blocks(dense, frames, orbs):
                             continue
                         block_idx = (block_type, ai, ni, li, aj, nj, lj)
                         if block_idx not in block_builder.blocks:
-                            block = block_builder.add_block(sparse=block_idx, features=np.asarray([[0]], dtype=np.int32), 
-                                            components=_components_idx_2d(li,lj) )
+                            block = block_builder.add_block(sparse=block_idx, properties=np.asarray([[0]], dtype=np.int32),
+                                            components=[_components_idx(li), _components_idx(lj)] )
+                            
                             if block_type == 1:
-                                block_asym = block_builder.add_block(sparse=(-1,)+block_idx[1:], features=np.asarray([[0]], dtype=np.int32), 
-                                            components=_components_idx_2d(li,lj) )
+                                block_asym = block_builder.add_block(sparse=(-1,)+block_idx[1:], properties=np.asarray([[0]], dtype=np.int32), 
+                                            components=[_components_idx(li), _components_idx(lj)])
                         else:
                             block = block_builder.blocks[block_idx]
                             if block_type == 1:
@@ -128,11 +130,12 @@ def dense_to_blocks(dense, frames, orbs):
                         jslice = slice(kj_offset,kj_offset+2*lj+1)
                         
                         if block_type == 1:
-                            block.add_samples(labels=[(A,i,j)], data=block_data_plus[islice, jslice].reshape((1,-1,1)) )
-                            block_asym.add_samples(labels=[(A,i,j)], data=block_data_minus[islice, jslice].reshape((1,-1,1)) )
+                            block.add_samples(labels=[(A,i,j)],data=block_data_plus[islice, jslice].reshape((1,2*li+1,2*lj+1,1)) )
+                            block_asym.add_samples(labels=[(A,i,j)], 
+                                                   data=block_data_minus[islice, jslice].reshape((1,2*li+1,2*lj+1,1)) )
                         else:
-                            block.add_samples(labels=[(A,i,j)], data=block_data[islice, jslice].reshape((1,-1,1)) )
-                            
+                            block.add_samples(labels=[(A,i,j)], data=block_data[islice, jslice].reshape((1,2*li+1,2*lj+1,1)) )
+                        
                         kj_offset += 2*lj+1
                     ki_offset += 2*li+1
                 kj_base+=orbs_tot[aj]
@@ -182,28 +185,28 @@ def blocks_to_dense(blocks, frames, orbs):
 
             # print(i, ni, li, ki_base, ki_offset)
             if block_type == 0:
-                ham[islice, jslice] = block_data[:,0].reshape(2*li+1,2*lj+1)
+                ham[islice, jslice] = block_data[:,:,0].reshape(2*li+1,2*lj+1)
                 if ki_offset != kj_offset:
-                    ham[jslice, islice] = block_data[:,0].reshape(2*li+1,2*lj+1).T
+                    ham[jslice, islice] = block_data[:,:,0].reshape(2*li+1,2*lj+1).T
             elif block_type == 2:
-                ham[islice, jslice] = block_data[:,0].reshape(2*li+1,2*lj+1)
-                ham[jslice, islice] = block_data[:,0].reshape(2*li+1,2*lj+1).T            
+                ham[islice, jslice] = block_data[:,:,0].reshape(2*li+1,2*lj+1)
+                ham[jslice, islice] = block_data[:,:,0].reshape(2*li+1,2*lj+1).T            
             elif block_type == 1:
-                ham[islice, jslice] += np.asarray(block_data[:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
-                ham[jslice, islice] += np.asarray(block_data[:,0].reshape(2*li+1,2*lj+1).T / np.sqrt(2), dtype=np.float64)
+                ham[islice, jslice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
+                ham[jslice, islice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1).T / np.sqrt(2), dtype=np.float64)
                 if ki_offset != kj_offset:
                     islice = slice(ki_base+kj_offset, ki_base+kj_offset+2*lj+1)
                     jslice = slice(kj_base+ki_offset, kj_base+ki_offset+2*li+1)
-                    ham[islice, jslice] += np.asarray(block_data[:,0].reshape(2*li+1,2*lj+1).T  / np.sqrt(2), dtype=np.float64)
-                    ham[jslice, islice] += np.asarray(block_data[:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
+                    ham[islice, jslice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1).T  / np.sqrt(2), dtype=np.float64)
+                    ham[jslice, islice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
             elif block_type == -1:
-                ham[islice, jslice] += np.asarray(block_data[:,0].reshape(2*li+1,2*lj+1) / np.sqrt(2), dtype=np.float64)
-                ham[jslice, islice] += np.asarray(block_data[:,0].reshape(2*li+1,2*lj+1).T / np.sqrt(2), dtype=np.float64)
+                ham[islice, jslice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1) / np.sqrt(2), dtype=np.float64)
+                ham[jslice, islice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1).T / np.sqrt(2), dtype=np.float64)
                 if ki_offset != kj_offset:
                     islice = slice(ki_base+kj_offset, ki_base+kj_offset+2*lj+1)
                     jslice = slice(kj_base+ki_offset, kj_base+ki_offset+2*li+1)
-                    ham[islice, jslice] -= np.asarray(block_data[:,0].reshape(2*li+1,2*lj+1).T  / np.sqrt(2), dtype=np.float64)
-                    ham[jslice, islice] -= np.asarray(block_data[:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
+                    ham[islice, jslice] -= np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1).T  / np.sqrt(2), dtype=np.float64)
+                    ham[jslice, islice] -= np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
     return dense
 
 def couple_blocks(blocks, cg=None):
@@ -211,10 +214,10 @@ def couple_blocks(blocks, cg=None):
         lmax = max(blocks.sparse["li"]+blocks.sparse["lj"])
         cg = ClebschGordanReal(lmax)
 
-    block_builder = DescriptorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j", "L"], ["structure", "atom_i", "atom_j"], ["M"], ["value"])
+    block_builder = DescriptorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j", "L"], ["structure", "atom_i", "atom_j"], [["M"]], ["value"])
     for idx, block in blocks:
         block_type, ai, ni, li, aj, nj, lj = tuple(idx)
-        decoupled = np.moveaxis(np.asarray(block.values, dtype=np.float64),-1,-2).reshape((len(block.samples), len(block.features), 2*li+1, 2*lj+1))
+        decoupled = np.moveaxis(np.asarray(block.values, dtype=np.float64),-1,-2).reshape((len(block.samples), len(block.properties), 2*li+1, 2*lj+1))
         coupled = cg.couple(decoupled)[(li,lj)]
         for L in coupled:
             block_idx = tuple(idx) + (L,)
@@ -223,8 +226,8 @@ def couple_blocks(blocks, cg=None):
                 parity = (-1)**(li+lj+L)
                 if (parity == -1 and block_type in (0,1)) or (parity==1 and block_type == -1):
                     continue
-            new_block = block_builder.add_block(sparse=block_idx, features=np.asarray([[0]], dtype=np.int32), 
-                            components=_components_idx(L).reshape(-1,1) )
+            new_block = block_builder.add_block(sparse=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
+                            components=[_components_idx(L).reshape(-1,1)] )
             new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1), 
                             data=np.moveaxis(coupled[L], -1, -2 ) )
 
@@ -235,7 +238,7 @@ def decouple_blocks(blocks, cg=None):
         lmax = max(blocks.sparse["L"])
         cg = ClebschGordanReal(lmax)
 
-    block_builder = DescriptorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "atom_i", "atom_j"], ["m1", "m2"], ["value"])
+    block_builder = DescriptorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "atom_i", "atom_j"], [["m1"], ["m2"]], ["value"])
     for idx, block in blocks:
         block_type, ai, ni, li, aj, nj, lj, L = tuple(idx)
         block_idx = (block_type, ai, ni, li, aj, nj, lj)
@@ -243,12 +246,13 @@ def decouple_blocks(blocks, cg=None):
             continue        
         coupled = {}
         for L in range(np.abs(li-lj), li+lj+1):
-            bidx = blocks.sparse.position(block_idx+(L,))
+            bidx = blocks.keys.position(block_idx+(L,))
             if bidx is not None:
                 coupled[L] = np.moveaxis(blocks.block(bidx).values, -1, -2) 
         decoupled = cg.decouple( {(li,lj):coupled})
-        new_block = block_builder.add_block(sparse=block_idx, features=np.asarray([[0]], dtype=np.int32), 
-                            components=_components_idx_2d(li,lj) )
-        new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1), 
-                            data=np.moveaxis(decoupled.reshape(decoupled.shape[:2]+(-1,)), -1, -2 ) )        
+        
+        new_block = block_builder.add_block(sparse=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
+                            components=[_components_idx(li), _components_idx(lj)] )
+        new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1),
+                            data=np.moveaxis(decoupled, 1, -1))
     return block_builder.build()    

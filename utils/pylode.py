@@ -17,6 +17,10 @@ class PyLODESphericalExpansion:
     ) -> TensorMap:
         # Step 1: compute spherical expansion with pylode
         hypers = copy.deepcopy(self._hypers)
+        
+        if not isinstance(frames,list):
+            frames = [frames]
+
         global_species = list(
             map(int, np.unique(np.concatenate([f.numbers for f in frames])))
         )

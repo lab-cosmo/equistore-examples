@@ -1,9 +1,9 @@
 jupyter
-ipykernel
 
 torch
 
-rascal @ https://github.com/lab-cosmo/librascal/archive/f45e6052e2ca5e3e5b62f1440a79b8da5eceec96.zip
-skcmosmo
+rascal @ https://github.com/lab-cosmo/librascal/archive/fed28b910d9ba6f8549c935aaf67bdc14051d511.zip
+rascaline @ https://github.com/Luthaf/rascaline/archive/4f1a9baca89d2a9ab4b1ee5d03749c657fb3e861.zip
+equistore @ https://github.com/lab-cosmo/equistore/archive/74e0eabb86424d19fef3a2d29efc069ac67ff208.zip
 
-aml_storage @ git+https://github.com/Luthaf/aml-storage
+skcmosmo
