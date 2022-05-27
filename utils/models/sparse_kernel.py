@@ -2,17 +2,22 @@ import numpy as np
 import torch
 
 import skcosmo.sample_selection
-
 from equistore import Labels, TensorBlock, TensorMap
 
-from .utils import structure_sum, dot, power, normalize, detach
 import utils.models.operations as ops
+
+from .utils import detach, dot, normalize, power, structure_sum
 
 
 def _select_support_points_for_block(block: TensorBlock, n_select: int):
     assert len(block.components) == 0
 
-    fps = skcosmo.sample_selection.FPS(n_to_select=n_select)
+    fps = skcosmo.sample_selection.FPS(
+        n_to_select=n_select,
+        # stop before selecting identical points
+        score_threshold=1e-12,
+        score_threshold_type="relative",
+    )
 
     array = block.values
     if isinstance(array, torch.Tensor):
