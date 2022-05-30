@@ -1,7 +1,6 @@
 import numpy as np
 import wigners
 
-
 class ClebschGordanReal:
     def __init__(self, l_max):
         self._l_max = l_max

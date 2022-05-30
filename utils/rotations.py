@@ -15,3 +15,44 @@ def rotation_matrix(alpha, beta, gamma):
     (ZYZ, implicit rotations) to be consistent with the common Wigner D definition.
     (alpha, beta, gamma) are Euler angles (radians)."""
     return Rotation.from_euler("ZYZ", [alpha, beta, gamma]).as_matrix()
+
+
+def xyz_to_spherical(data, axes=()):
+    """
+    Converts a vector (or a list of outer products of vectors) from
+    Cartesian to l=1 spherical form. Given the definition of real
+    spherical harmonics, this is just mapping (y, z, x) -> (-1,0,1)
+
+    Automatically detects which directions should be converted
+
+    data: array
+        An array containing the data that must be converted
+
+    axes: array_like
+        A list of the dimensions that should be converted. If
+        empty, selects all dimensions with size 3. For instance,
+        a list of polarizabilities (ntrain, 3, 3) will convert
+        dimensions 1 and 2.
+
+    Returns:
+        The array in spherical (l=1) form
+    """
+    shape = data.shape
+    rdata = data
+    # automatically detect the xyz dimensions
+    if len(axes) == 0:
+        axes = np.where(np.asarray(shape) == 3)[0]
+    return np.roll(data, -1, axis=axes)
+
+
+def spherical_to_xyz(data, axes=()):
+    """
+    The inverse operation of xyz_to_spherical. Arguments have the
+    same meaning, only it goes from l=1 to (x,y,z).
+    """
+    shape = data.shape
+    rdata = data
+    # automatically detect the l=1 dimensions
+    if len(axes) == 0:
+        axes = np.where(np.asarray(shape) == 3)[0]
+    return np.roll(data, 1, axis=axes)
