@@ -57,7 +57,10 @@ class CombinedModel:
         self.regularizer = regularizer
         self.support_points = normalize(detach(support_points))
 
+        self.normalize = normalize
+
         self.weights = None
+        self.baseline = None
 
     def fit(self, ps, linear_features, energies, forces=None):
         # Create the kernels from the power spectrum
