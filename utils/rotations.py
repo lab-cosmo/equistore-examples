@@ -1,6 +1,8 @@
+from distutils.command.clean import clean
 import numpy as np
 from scipy.spatial.transform import Rotation
 from sympy.physics.wigner import wigner_d
+from .clebsh_gordan import _real2complex
 
 def wigner_d_matrix(l, alpha, beta, gamma):
     """Computes a Wigner D matrix
@@ -16,6 +18,16 @@ def rotation_matrix(alpha, beta, gamma):
     (alpha, beta, gamma) are Euler angles (radians)."""
     return Rotation.from_euler("ZYZ", [alpha, beta, gamma]).as_matrix()
 
+def wigner_d_real(l, alpha, beta, gamma):
+    """Computes a real-valued Wigner D matrix
+     D^l_{mm'}(alpha, beta, gamma)
+    (alpha, beta, gamma) are Euler angles (radians, ZYZ convention) and l the irrep.
+    Rotates real spherical harmonics by application from the left.
+    """
+
+    wd = np.complex128(wigner_d(l, alpha, beta, gamma))
+    r2c = _real2complex(l)
+    return np.real(np.conjugate(r2c.T@wd)@r2c)
 
 def xyz_to_spherical(data, axes=()):
     """
