@@ -51,13 +51,19 @@ def select_support_points(ps, n_select):
 
 
 class CombinedModel:
-    def __init__(self, support_points, zeta, regularizer, jitter=1e-13):
+    def __init__(
+        self, do_normalize, support_points, zeta, regularizer, ratios, jitter=1e-13
+    ):
         self.zeta = zeta
         self.jitter = jitter
         self.regularizer = regularizer
+        self.ratios = ratios
+
+        assert self.ratios[0] == 1
+        assert len(self.ratios) == 2
         self.support_points = normalize(detach(support_points))
 
-        self.normalize = normalize
+        self.do_normalize = do_normalize
 
         self.weights = None
         self.baseline = None
@@ -87,7 +93,7 @@ class CombinedModel:
         K_NM = k_nm.values
 
         # Subtract the mean of the energies for the learning
-        self.baseline = energies.mean()
+        self.baseline = 0  # energies.mean()
         Y = energies.reshape(-1, 1) - self.baseline
 
         # The regularizor is subtracted at this point for easier
@@ -135,7 +141,7 @@ class CombinedModel:
         linear_features_per_structure = structure_sum(linear_features)
 
         # Initial checks normalizations
-        if self.normalize:
+        if self.do_normalize:
             linear_features_per_structure = normalize(linear_features_per_structure)
 
         block = linear_features_per_structure.block()
@@ -144,21 +150,21 @@ class CombinedModel:
         # Normalize features as for the kernel part (see comments above)
         # Note that this is different from the "linear model" implementation
         # currently found in equistore
-        X_NQ = block.values
-        X_NQ[:] /= energy_regularizer[:, None]
+        X = block.values
+        X[:] /= energy_regularizer[:, None]
 
         # Similarly to the sparse kernel part, merge the kernels
         if forces is not None:
             gradient = block.gradient("positions")
-            X_grad = gradient.data.reshape(3 * len(gradient.samples), X_NQ.shape[1])
+            X_grad = gradient.data.reshape(3 * len(gradient.samples), X.shape[1])
             X_grad[:] /= forces_regularizer
 
-            X = ops.vstack([X_NQ, X_grad])
+            X = ops.vstack([X, X_grad])
 
         ###
         # Combination Part
         ###
-        X_combined = np.hstack([K_NM, X])
+        X_combined = np.hstack([K_NM, self.ratios[1] * X])
         num_features = X.shape[1]
         Regularization_combined = ops.block_diag(K_MM, np.eye(num_features))
 
@@ -171,8 +177,7 @@ class CombinedModel:
         # of the weight vector correspond to which model
         self.model_parameters = []
         self.model_parameters.append(K_NM.shape[1])
-        self.model_parameters.append(X_NQ.shape[1])
-
+        self.model_parameters.append(X.shape[1])
 
     def predict(self, ps, linear_features, with_forces=False):
         if self.weights is None:
@@ -194,16 +199,16 @@ class CombinedModel:
 
         # Linear Model part
         linear_features_per_structure = structure_sum(linear_features)
-        if self.normalize:
+        if self.do_normalize:
             linear_features_per_structure = normalize(linear_features_per_structure)
         block = linear_features_per_structure.block()
         assert len(block.components) == 0
         X = block.values
 
         n_linear = self.model_parameters[1]
-        energies_2 = X @ self.weights[-n_linear:]
+        energies_2 = self.ratios[1] * X @ self.weights[-n_linear:]
 
-        # Combine 
+        # Combine
         energies = energies_1 + energies_2 + self.baseline
 
         # Forces
