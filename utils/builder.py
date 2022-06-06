@@ -2,7 +2,7 @@ import numpy as np
 from equistore import Labels, TensorBlock, TensorMap
 
 
-class DescriptorBuilder:
+class TensorBuilder:
     def __init__(self, sparse_names, sample_names, component_names, property_names):
         self._sparse_names = sparse_names
         self.blocks = {}
@@ -161,7 +161,7 @@ class BlockBuilderPerSamples:
         return block
 
 
-class BlockBuilderPerProperties:
+class TensorBuilderPerProperties:
     def __init__(self, samples, components, property_names, gradient_samples=None):
         assert isinstance(samples, Labels)
         assert all([isinstance(component, Labels) for component in components])
