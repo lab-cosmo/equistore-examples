@@ -129,7 +129,7 @@ class Fock_regression():
             L = idx[-1]                    
             block_data = self._models[idx].predict(self.block_feats[idx].values)
             block_samples = self.block_samples[idx]
-            print(idx, block_data.shape)        
+                   
             newblock = TensorBlock(
             values=block_data,
                 samples=block_samples,

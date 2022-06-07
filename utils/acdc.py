@@ -1,7 +1,7 @@
 import numpy as np
 from aml_storage import Labels, Block, Descriptor
 
-from utils.builder import DescriptorBuilder
+from utils.builder import TensorBuilder
 from utils.clebsh_gordan import ClebschGordanReal
 
 ###############################################################

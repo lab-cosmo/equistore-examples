@@ -3,15 +3,15 @@ from equistore import Labels, TensorBlock, TensorMap
 
 
 class TensorBuilder:
-    def __init__(self, sparse_names, sample_names, component_names, property_names):
-        self._sparse_names = sparse_names
+    def __init__(self, key_names, sample_names, component_names, property_names):
+        self._key_names = key_names
         self.blocks = {}
 
         self._sample_names = sample_names
         self._component_names = component_names
         self._property_names = property_names
 
-    def add_full_block(self, sparse, samples, components, properties, data):
+    def add_full_block(self, keys, samples, components, properties, data):
         if isinstance(samples, Labels):
             samples = samples.view(dtype=np.int32).reshape(samples.shape[0], -1)
         samples = Labels(self._sample_names, samples)
@@ -29,11 +29,11 @@ class TensorBuilder:
         properties = Labels(self._property_names, properties)
 
         block = TensorBlock(data, samples, components, properties)
-        self.blocks[tuple(sparse)] = block
+        self.blocks[tuple(keys)] = block
         return block
 
     def add_block(
-        self, sparse, gradient_samples=None, *, samples=None, components, properties=None
+        self, keys, gradient_samples=None, *, samples=None, components, properties=None
     ):
         if samples is None and properties is None:
             raise Exception("can not have both samples & properties unset")
@@ -65,21 +65,21 @@ class TensorBuilder:
             properties = Labels(self._property_names, properties)
 
         if properties is not None:
-            block = BlockBuilderPerSamples(
+            block = TensorBuilderPerSamples(
                 properties, components, self._sample_names, gradient_samples
             )
 
         if samples is not None:
-            block = BlockBuilderPerProperties(
+            block = TensorBuilderPerProperties(
                 samples, components, self._property_names, gradient_samples
             )
 
-        self.blocks[sparse] = block
+        self.blocks[keys] = block
         return block
 
     def build(self):
         keys = Labels(
-            self._sparse_names,
+            self._key_names,
             np.array(list(self.blocks.keys()), dtype=np.int32),
         )
 
@@ -87,9 +87,9 @@ class TensorBuilder:
         for block in self.blocks.values():
             if isinstance(block, TensorBlock):
                 blocks.append(block)
-            elif isinstance(block, BlockBuilderPerProperties):
+            elif isinstance(block, TensorBuilderPerProperties):
                 blocks.append(block.build())
-            elif isinstance(block, BlockBuilderPerSamples):
+            elif isinstance(block, TensorBuilderPerSamples):
                 blocks.append(block.build())
             else:
                 Exception("Invalid block type")
@@ -100,7 +100,7 @@ class TensorBuilder:
         return TensorMap(keys, blocks)
 
 
-class BlockBuilderPerSamples:
+class TensorBuilderPerSamples:
     def __init__(self, properties, components, sample_names, gradient_samples=None):
         assert isinstance(properties, Labels)
         assert all([isinstance(component, Labels) for component in components])

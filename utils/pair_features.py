@@ -1,7 +1,7 @@
 import numpy as np
 import json
 from equistore import Labels, TensorBlock, TensorMap
-from utils.builder import DescriptorBuilder
+from utils.builder import TensorBuilder
 import ase.io
 from itertools import product
 from utils.clebsh_gordan import ClebschGordanReal
@@ -52,7 +52,7 @@ def rho0ij_builder(hypers, frames):
 #     gij_expansion=calculator.transform(ijframes).get_features(calculator).reshape(len(ijframes), max_atoms, max_atoms, hypers_ij["max_radial"], -1) #TODO: change for differet len
 #     print(gij_expansion.shape)
     
-    feat_builder= DescriptorBuilder(["block_type", "L", "nu", "sigma",  "species_i", "species_j"], ["structure", "center_i", "center_j"], [["mu"]], ["n"])
+    feat_builder= TensorBuilder(["block_type", "L", "nu", "sigma",  "species_i", "species_j"], ["structure", "center_i", "center_j"], [["mu"]], ["n"])
 
     pair_loc=[]
     lmax = hypers["max_angular"]
@@ -83,14 +83,14 @@ def rho0ij_builder(hypers, frames):
                         block_idx=(block_type, l, 0, 1, sp_i, sp_j)
                         if block_idx not in feat_builder.blocks:
                             TensorBlock = feat_builder.add_block(
-                                sparse=block_idx, 
+                                keys=block_idx, 
                                 properties=np.asarray([list(range(hypers["max_radial"]))], dtype=np.int32).T, 
                                 components= [np.asarray([list(range(-l, l+1))], dtype=np.int32 ).T] 
                             )
 
                             if block_type == 1:
                                 block_asym = feat_builder.add_block(
-                                    sparse=(-1,)+block_idx[1:], 
+                                    keys=(-1,)+block_idx[1:], 
                                     properties=np.asarray([list(range(hypers["max_radial"]))], dtype=np.int32).T,
                                     components= [np.asarray([list(range(-l, l+1))], dtype=np.int32 ).T]
                                 )
