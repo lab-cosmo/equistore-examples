@@ -21,8 +21,8 @@ def compute_power_spectrum(spherical_expansion_1, spherical_expansion_2=None):
     # associated with 1-center expansion coefficients.
     assert spherical_expansion_1.keys.names == (
         "spherical_harmonics_l",
-        "center_species",
-        "neighbor_species",
+        "species_center",
+        "species_neighbor",
     )
 
     # If two different sets of coefficients are provided, it is assumed
@@ -37,8 +37,8 @@ def compute_power_spectrum(spherical_expansion_1, spherical_expansion_2=None):
         use_same_spherical_expansions = False
         assert spherical_expansion_2.keys.names == (
             "spherical_harmonics_l",
-            "center_species",
-            "neighbor_species",
+            "species_center",
+            "species_neighbor",
         )
 
     blocks = []
@@ -149,9 +149,9 @@ def compute_power_spectrum(spherical_expansion_1, spherical_expansion_2=None):
     keys = Labels(
         names=[
             "spherical_harmonics_l",
-            "center_species",
-            "neighbor_species_1",
-            "neighbor_species_2",
+            "species_center",
+            "species_neighbor_1",
+            "species_neighbor_2",
         ],
         values=np.array(keys, dtype=np.int32),
     )
