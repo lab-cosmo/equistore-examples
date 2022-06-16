@@ -115,11 +115,11 @@ def dense_to_blocks(dense, frames, orbs):
                             continue
                         block_idx = (block_type, ai, ni, li, aj, nj, lj)
                         if block_idx not in block_builder.blocks:
-                            block = block_builder.add_block(sparse=block_idx, properties=np.asarray([[0]], dtype=np.int32),
+                            block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32),
                                             components=[_components_idx(li), _components_idx(lj)] )
                             
                             if block_type == 1:
-                                block_asym = block_builder.add_block(sparse=(-1,)+block_idx[1:], properties=np.asarray([[0]], dtype=np.int32), 
+                                block_asym = block_builder.add_block(keys=(-1,)+block_idx[1:], properties=np.asarray([[0]], dtype=np.int32), 
                                             components=[_components_idx(li), _components_idx(lj)])
                         else:
                             block = block_builder.blocks[block_idx]
@@ -211,7 +211,7 @@ def blocks_to_dense(blocks, frames, orbs):
 
 def couple_blocks(blocks, cg=None):
     if cg is None:
-        lmax = max(blocks.sparse["li"]+blocks.sparse["lj"])
+        lmax = max(blocks.keys["li"]+blocks.keys["lj"])
         cg = ClebschGordanReal(lmax)
 
     block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j", "L"], ["structure", "atom_i", "atom_j"], [["M"]], ["value"])
@@ -226,7 +226,7 @@ def couple_blocks(blocks, cg=None):
                 parity = (-1)**(li+lj+L)
                 if (parity == -1 and block_type in (0,1)) or (parity==1 and block_type == -1):
                     continue
-            new_block = block_builder.add_block(sparse=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
+            new_block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
                             components=[_components_idx(L).reshape(-1,1)] )
             new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1), 
                             data=np.moveaxis(coupled[L], -1, -2 ) )
@@ -235,7 +235,7 @@ def couple_blocks(blocks, cg=None):
 
 def decouple_blocks(blocks, cg=None):
     if cg is None:
-        lmax = max(blocks.sparse["L"])
+        lmax = max(blocks.keys["L"])
         cg = ClebschGordanReal(lmax)
 
     block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "atom_i", "atom_j"], [["m1"], ["m2"]], ["value"])
@@ -251,7 +251,7 @@ def decouple_blocks(blocks, cg=None):
                 coupled[L] = np.moveaxis(blocks.block(bidx).values, -1, -2) 
         decoupled = cg.decouple( {(li,lj):coupled})
         
-        new_block = block_builder.add_block(sparse=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
+        new_block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
                             components=[_components_idx(li), _components_idx(lj)] )
         new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1),
                             data=np.moveaxis(decoupled, 1, -1))

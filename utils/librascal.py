@@ -34,13 +34,13 @@ class RascalSphericalExpansion:
 
         # Step 2: move data around to follow the storage convention
         keys = Labels(
-            names=["spherical_harmonics_l", "center_species", "neighbor_species"],
+            names=["spherical_harmonics_l", "species_center", "species_neighbor"],
             values=np.array(
                 [
-                    [l, center_species, neighbor_species]
+                    [l, species_center, species_neighbor]
                     for l in range(hypers["max_angular"] + 1)
-                    for center_species in global_species
-                    for neighbor_species in global_species
+                    for species_center in global_species
+                    for species_neighbor in global_species
                 ],
                 dtype=np.int32,
             ),
@@ -71,15 +71,15 @@ class RascalSphericalExpansion:
                 global_to_per_structure_atom_id.append(i)
 
         blocks = []
-        for l, center_species, neighbor_species in keys:
-            neighbor_species_i = global_species.index(neighbor_species)
-            center_species_mask = np.where(info[:, 2] == center_species)[0]
-            block_data = data[center_species_mask, neighbor_species_i, :, lm_slices[l]]
+        for l, species_center, species_neighbor in keys:
+            species_neighbor_i = global_species.index(species_neighbor)
+            species_center_mask = np.where(info[:, 2] == species_center)[0]
+            block_data = data[species_center_mask, species_neighbor_i, :, lm_slices[l]]
             block_data = block_data.swapaxes(1, 2)
 
             samples = Labels(
                 names=["structure", "center"],
-                values=np.copy(info[center_species_mask, :2]).astype(np.int32),
+                values=np.copy(info[species_center_mask, :2]).astype(np.int32),
             )
             spherical_component = Labels(
                 names=["spherical_harmonics_m"],
@@ -104,14 +104,14 @@ class RascalSphericalExpansion:
                             grad_info[:, 0] == structure,
                             grad_info[:, 1] == center,
                         ),
-                        grad_info[:, 4] == neighbor_species,
+                        grad_info[:, 4] == species_neighbor,
                     )
 
                     for grad_index in np.where(gradient_mask)[0]:
                         start = 3 * grad_index
                         stop = 3 * grad_index + 3
                         block_gradient = gradients[
-                            start:stop, neighbor_species_i, :, lm_slices[l]
+                            start:stop, species_neighbor_i, :, lm_slices[l]
                         ]
                         block_gradient = block_gradient.swapaxes(1, 2)
                         block_gradient = block_gradient.reshape(
@@ -367,13 +367,13 @@ class RascalSphericalExpansionTorch:
 
         # Step 2: move data around to follow the storage convention
         keys = Labels(
-            names=["spherical_harmonics_l", "center_species", "neighbor_species"],
+            names=["spherical_harmonics_l", "species_center", "species_neighbor"],
             values=np.array(
                 [
-                    [l, center_species, neighbor_species]
+                    [l, species_center, species_neighbor]
                     for l in range(hypers["max_angular"] + 1)
-                    for center_species in global_species
-                    for neighbor_species in global_species
+                    for species_center in global_species
+                    for species_neighbor in global_species
                 ],
                 dtype=np.int32,
             ),
@@ -396,15 +396,15 @@ class RascalSphericalExpansionTorch:
         )
 
         blocks = []
-        for l, center_species, neighbor_species in keys:
-            neighbor_species_i = global_species.index(neighbor_species)
-            center_species_mask = np.where(info[:, 2] == center_species)[0]
-            block_data = data[center_species_mask, neighbor_species_i, :, lm_slices[l]]
+        for l, species_center, species_neighbor in keys:
+            species_neighbor_i = global_species.index(species_neighbor)
+            species_center_mask = np.where(info[:, 2] == species_center)[0]
+            block_data = data[species_center_mask, species_neighbor_i, :, lm_slices[l]]
             block_data = block_data.swapaxes(1, 2)
 
             samples = Labels(
                 names=["structure", "center"],
-                values=np.copy(info[center_species_mask, :2]).astype(np.int32),
+                values=np.copy(info[species_center_mask, :2]).astype(np.int32),
             )
             component = Labels(
                 names=["spherical_harmonics_m"],

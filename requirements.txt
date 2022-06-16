@@ -2,8 +2,8 @@ jupyter
 
 torch
 
-rascal @ https://github.com/lab-cosmo/librascal/archive/fed28b910d9ba6f8549c935aaf67bdc14051d511.zip
-rascaline @ https://github.com/Luthaf/rascaline/archive/4f1a9baca89d2a9ab4b1ee5d03749c657fb3e861.zip
-equistore @ https://github.com/lab-cosmo/equistore/archive/74e0eabb86424d19fef3a2d29efc069ac67ff208.zip
+rascal @ https://github.com/lab-cosmo/librascal/archive/5f6dd49c91e0e9750be3fbb1d601ec97cfac6097.zip
+rascaline @ https://github.com/Luthaf/rascaline/archive/356736e41a98389b8024ba08de690ba7fb7af0fc.zip
+equistore @ https://github.com/lab-cosmo/equistore/archive/0eb5fc09e29ca1780de933ddad0394bf30be076e.zip
 
 skcmosmo
