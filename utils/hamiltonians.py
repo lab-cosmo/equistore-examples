@@ -76,7 +76,7 @@ def dense_to_blocks(dense, frames, orbs):
     l_{i,j}: angular momentum
     """
 
-    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "atom_i", "atom_j"], [["m1"], ["m2"]], ["value"])
+    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "center", "neighbor"], [["m1"], ["m2"]], ["value"])
     orbs_tot, _ = _orbs_offsets(orbs)
     for A in range(len(frames)):
         frame = frames[A]
@@ -214,7 +214,7 @@ def couple_blocks(blocks, cg=None):
         lmax = max(blocks.keys["li"]+blocks.keys["lj"])
         cg = ClebschGordanReal(lmax)
 
-    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j", "L"], ["structure", "atom_i", "atom_j"], [["M"]], ["value"])
+    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j", "L"], ["structure", "center", "neighbor"], [["M"]], ["value"])
     for idx, block in blocks:
         block_type, ai, ni, li, aj, nj, lj = tuple(idx)
         decoupled = np.moveaxis(np.asarray(block.values, dtype=np.float64),-1,-2).reshape((len(block.samples), len(block.properties), 2*li+1, 2*lj+1))
@@ -238,7 +238,7 @@ def decouple_blocks(blocks, cg=None):
         lmax = max(blocks.keys["L"])
         cg = ClebschGordanReal(lmax)
 
-    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "atom_i", "atom_j"], [["m1"], ["m2"]], ["value"])
+    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "center", "neighbor"], [["m1"], ["m2"]], ["value"])
     for idx, block in blocks:
         block_type, ai, ni, li, aj, nj, lj, L = tuple(idx)
         block_idx = (block_type, ai, ni, li, aj, nj, lj)
