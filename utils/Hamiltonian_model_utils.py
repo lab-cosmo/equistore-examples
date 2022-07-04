@@ -109,12 +109,12 @@ class Fock_regression():
             
             parity= (-1)**(li+lj+L)
             tgt = block_fock.values
-            idx_feats = get_feat_keys(idx_fock, sigma=parity, nu=1)
-            if idx_feats not in feats.keys:
-                print(idx_feats)
-                raise ValueError("feature key not found")
+            #idx_feats = get_feat_keys(idx_fock, sigma=parity, nu=1)
+            #if idx_feats not in feats.keys:
+            #    print(idx_feats)
+            #    raise ValueError("feature key not found")
              
-            self.block_feats[idx_fock]= feats.block(block_type=block_type, L=L, nu=1, sigma=parity, species_i=ai, species_j=aj) 
+            self.block_feats[idx_fock]= feats.block(block_type=block_type, spherical_harmonics_l=L,inversion_sigma=parity, species_center=ai, species_neighbor=aj) 
             
             self._models[idx_fock] = self.model_template(L, *self._args, **self._kwargs)
             self._models[idx_fock].fit(self.block_feats[idx_fock].values, tgt)

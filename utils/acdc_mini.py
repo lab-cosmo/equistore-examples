@@ -258,7 +258,7 @@ def cg_increment(
         feature_names = tuple(root+"_1" for root in feature_roots) + ("l_1",  
                         ) + tuple(root+"_2" for root in feature_roots) + ("l_2",)
     else:
-        feature_names = tuple(x_nu.block(0).features.names) + (
+        feature_names = tuple(x_nu.block(0).properties.names) + (
             "k_" + str(nu + 1),) + tuple(root+"_"+str(nu+1) for root in feature_roots) + (
             "l_" + str(nu + 1),)
 
