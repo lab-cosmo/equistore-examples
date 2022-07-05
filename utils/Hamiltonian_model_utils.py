@@ -114,11 +114,10 @@ class Fock_regression():
             #    print(idx_feats)
             #    raise ValueError("feature key not found")
              
-            self.block_feats[idx_fock]= feats.block(block_type=block_type, spherical_harmonics_l=L,inversion_sigma=parity, species_center=ai, species_neighbor=aj) 
+            block_feats = feats.block(block_type=block_type, spherical_harmonics_l=L,inversion_sigma=parity, species_center=ai, species_neighbor=aj) 
             
             self._models[idx_fock] = self.model_template(L, *self._args, **self._kwargs)
-            self._models[idx_fock].fit(self.block_feats[idx_fock].values, tgt)
-            self.block_samples[idx_fock]= block_fock.samples
+            self._models[idx_fock].fit(block_feats.values, tgt)            
             
             #print(self._models.keys
                     
@@ -126,9 +125,11 @@ class Fock_regression():
     def predict(self, feats, progress=None):
         pred_blocks = []
         for idx in self._models.keys():
-            L = idx[-1]                    
-            block_data = self._models[idx].predict(self.block_feats[idx].values)
-            block_samples = self.block_samples[idx]
+            block_type, ai, ni, li, aj, nj, lj, L = idx
+            parity= (-1)**(li+lj+L)            
+            block_feats = feats.block(block_type=block_type, spherical_harmonics_l=L,inversion_sigma=parity, species_center=ai, species_neighbor=aj) 
+            block_data = self._models[idx].predict(block_feats.values)
+            block_samples = block_feats.samples
                    
             newblock = TensorBlock(
             values=block_data,
