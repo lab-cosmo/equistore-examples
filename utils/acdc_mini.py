@@ -110,13 +110,18 @@ def cg_combine(
     for index_a, block_a in x_a:
         lam_a = index_a["spherical_harmonics_l"]
         sigma_a = index_a["inversion_sigma"]
-        order_a = index_a["order_nu"]        
+        order_a = index_a["order_nu"]                
+        properties_a = block_a.properties  # pre-extract this block as accessing a c property has a non-zero cost
+        samples_a = block_a.samples
         
         # and x_b
         for index_b, block_b in x_b:
             lam_b = index_b["spherical_harmonics_l"]
             sigma_b = index_b["inversion_sigma"]
-            order_b = index_b["order_nu"]          
+            order_b = index_b["order_nu"]       
+            properties_b = block_b.properties
+            samples_b = block_b.samples
+            
             
             if other_keys_match is None:            
                 OTHERS = tuple( index_a[name] for name in other_keys_a ) + tuple( index_b[name] for name in other_keys_b )
@@ -129,20 +134,36 @@ def cg_combine(
                 OTHERS = OTHERS + tuple(index_a[k] for k in other_keys_a if k not in other_keys_match)
                 OTHERS = OTHERS + tuple(index_b[k] for k in other_keys_b if k not in other_keys_match)
                                 
-            if "neighbor" in block_b.samples.names and "neighbor" not in block_a.samples.names:
+            if "neighbor" in samples_b.names and "neighbor" not in samples_a.names:
                 # we hard-code a combination method where b can be a pair descriptor. this needs some work to be general and robust
                 # note also that this assumes that structure, center are ordered in the same way in the centred and neighbor descriptors
                 neighbor_slice = []
                 smp_a, smp_b = 0, 0
-                while smp_b < block_b.samples.shape[0]:                    
-                    if block_b.samples[smp_b][["structure","center"]] != block_a.samples[smp_a]:
+                while smp_b < samples_b.shape[0]:                    
+                    if samples_b[smp_b][["structure","center"]] != samples_a[smp_a]:
                         smp_a+=1
                     neighbor_slice.append(smp_a)
                     smp_b+=1
                 neighbor_slice = np.asarray(neighbor_slice)
             else:
                 neighbor_slice = slice(None)
+                        
+            # determines the properties that are in the select list  
+            sel_feats = []
+            sel_idx = []
+            sel_feats = np.indices((len(properties_a), len(properties_b))).reshape(2,-1).T
             
+            prop_ids_a = []
+            prop_ids_b = []
+            for n_a, f_a in enumerate(properties_a):
+                prop_ids_a.append( tuple(f_a) + (lam_a,))
+            for n_b, f_b in enumerate(properties_b):
+                prop_ids_b.append( tuple(f_b) + (lam_b,))
+            prop_ids_a = np.asarray(prop_ids_a) 
+            prop_ids_b = np.asarray(prop_ids_b)
+            sel_idx = np.hstack([prop_ids_a[sel_feats[:,0]],prop_ids_b[sel_feats[:,1]] ])            
+            if len(sel_feats) == 0:
+                continue            
             # loops over all permissible output blocks. note that blocks will
             # be filled from different la, lb
             for L in range(np.abs(lam_a - lam_b), 1 + min(lam_a + lam_b, lcut)):
@@ -157,30 +178,7 @@ def cg_combine(
                     if grad_components is not None:
                         X_grads[KEY] = []  
                         X_grad_samples[KEY] = block_b.gradient("positions").samples
-
-                sel_feats = []
-                sel_weights = []
-                # determines the properties that are in the select list
-                for n_a in range(len(block_a.properties)):
-                    f_a = tuple(block_a.properties[n_a])
-                    w_a = 1.0 
-                    for n_b in range(len(block_b.properties)):
-                        f_b = tuple(block_b.properties[n_b])
-                        w_b = 1.0 
-
-                        # the index is assembled consistently with the scheme above
-                        IDX = f_a + (lam_a,) + f_b + (lam_b,)
-                        w_X = 1.0
-
-                        sel_feats.append([n_a, n_b])
-                        sel_weights.append(w_X / (w_a * w_b))
-                        X_idx[KEY].append(IDX)
-
-                sel_feats = np.asarray(sel_feats, dtype=int)
-
-                if len(sel_feats) == 0:
-                    continue
-
+                                
                 # builds all products in one go
                 one_shot_blocks = clebsch_gordan.combine_einsum(
                     block_a.values[neighbor_slice][:, :, sel_feats[:, 0]],
@@ -207,14 +205,12 @@ def cg_combine(
                     )
 
                 # now loop over the selected features to build the blocks
-                for Q in range(len(sel_feats)):
-                    # (n_a, n_b) = sel_feats[Q]
-                    newblock = one_shot_blocks[..., Q] * sel_weights[Q]
-                    X_blocks[KEY].append(newblock)
-                    if grad_components is not None:
-                        newgrad = one_shot_grads[..., Q] * sel_weights[Q]
-                        X_grads[KEY].append(newgrad)
-
+                
+                X_idx[KEY].append(sel_idx)
+                X_blocks[KEY].append(one_shot_blocks)
+                if grad_components is not None:
+                    X_grads[KEY].append(one_shot_grads)
+                                         
     # turns data into sparse storage format (and dumps any empty block in the process)
     nz_idx = []
     nz_blk = []
@@ -224,7 +220,7 @@ def cg_combine(
         if len(X_blocks[KEY]) == 0:
             continue  # skips empty blocks
         nz_idx.append(KEY)
-        block_data = np.moveaxis(np.asarray(X_blocks[KEY]), 0, -1)
+        block_data = np.concatenate(X_blocks[KEY], axis=-1)
         sph_components = Labels(
                 ["spherical_harmonics_m"], np.asarray(range(-L, L + 1), dtype=np.int32).reshape(-1, 1)
             )
@@ -233,10 +229,10 @@ def cg_combine(
             values=block_data,
             samples=X_samples[KEY],
             components=[sph_components],
-            properties=Labels(feature_names, np.asarray(X_idx[KEY], dtype=np.int32)),
+            properties=Labels(feature_names, np.asarray(np.vstack(X_idx[KEY]), dtype=np.int32)),
         )
         if grad_components is not None:
-            grad_data = np.swapaxes(np.moveaxis(np.asarray(X_grads[KEY]), 0, -1), 2, 1)
+            grad_data = np.swapaxes(np.concatenate(X_grads[KEY], axis=-1), 2, 1)
             newblock.add_gradient("positions", data=grad_data, samples=X_grad_samples[KEY], components=[grad_components[0], sph_components] )
         nz_blk.append(newblock)
     X = TensorMap(

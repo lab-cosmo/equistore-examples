@@ -256,3 +256,72 @@ def decouple_blocks(blocks, cg=None):
         new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1),
                             data=np.moveaxis(decoupled, 1, -1))
     return block_builder.build()    
+
+def hamiltonian_features(centers, pairs):
+    """ Builds Hermitian, HAM-learning adapted features starting 
+    from generic center |rho_i^nu> and pair |rho_ij^nu> features. 
+    The sample and property labels must match. """
+    keys = []
+    blocks = []
+    # central blocks
+    for k, b in centers:
+        keys.append(tuple(k)+(k["species_center"], 0,))
+        samples_array = np.vstack(b.samples.tolist())
+        blocks.append(TensorBlock(
+            samples = Labels(names = b.samples.names + ("neighbor",),                             
+                             values = np.asarray(np.hstack([ samples_array, samples_array[:,-1:]]), dtype=np.int32) ),
+            components = b.components,
+            properties = b.properties,
+            values = b.values
+        ))
+            
+    for k, b in pairs:                        
+        if k["species_center"] == k["species_neighbor"]:
+            # off-site, same species
+            idx_up = np.where(b.samples["center"]<b.samples["neighbor"])[0]
+            if len(idx_up) ==0:
+                continue
+            idx_lo = np.where(b.samples["center"]>b.samples["neighbor"])[0]
+            # we need to find the "ji" position that matches each "ij" sample. 
+            # we exploit the fact that the samples are sorted by structure to do a "local" rearrangement
+            smp_up, smp_lo = 0, 0
+            for smp_up in range(len(idx_up)):
+                ij = b.samples[idx_up[smp_up]][["center", "neighbor"]]
+                for smp_lo in range(smp_up, len(idx_lo)):
+                    ij_lo = b.samples[idx_up[smp_up]][["neighbor", "center"]]
+                    if b.samples[idx_up[smp_up]]["structure"] != b.samples[idx_lo[smp_lo]]["structure"]:
+                        raise ValueError(f"Could not find matching ji term for sample {b.samples[idx_up[smp_up]]}") 
+                    if ij == ij_lo:
+                        idx_lo[smp_up], idx_lo[smp_lo] = idx_lo[smp_lo], idx_lo[smp_up]                        
+                        break            
+            
+            keys.append(tuple(k)+(1,))
+            keys.append(tuple(k)+(-1,))            
+            blocks.append(TensorBlock(
+                samples = Labels(names = b.samples.names,
+                                 values = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32) ),
+                components = b.components,
+                properties = b.properties,
+                values = (b.values[idx_up] + b.values[idx_lo])/np.sqrt(2)
+            ))
+            blocks.append(TensorBlock(
+                samples = Labels(names = b.samples.names,
+                                 values = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32) ),
+                components = b.components,
+                properties = b.properties,
+                values = (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2)
+            ))
+        elif k["species_center"] < k["species_neighbor"]:
+            # off-site, different species
+            keys.append(tuple(k)+(2,))
+            blocks.append(TensorBlock(
+                samples = b.samples, 
+                components = b.components,
+                properties = b.properties,
+                values = b.values.copy()
+            ))
+                                
+    return TensorMap(
+        keys = Labels(names=pairs.keys.names + ("block_type",), values =np.asarray(keys, dtype=np.int32)),
+        blocks = blocks
+    )
