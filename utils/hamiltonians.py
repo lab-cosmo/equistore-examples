@@ -1,3 +1,4 @@
+from equistore import TensorMap, TensorBlock, Labels
 from .builder import TensorBuilder
 from .clebsh_gordan import ClebschGordanReal
 import numpy as np
