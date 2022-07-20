@@ -4,7 +4,7 @@ from sklearn.linear_model import Ridge, RidgeCV
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.model_selection import GridSearchCV
 from sklearn.base import RegressorMixin, BaseEstimator
-from utils.hamiltonians import _orbs_offsets, _atom_blocks_idx
+from utils.hamiltonians import *
 from time import time
 import scipy
 from equistore import Labels, TensorBlock, TensorMap
@@ -77,8 +77,10 @@ class SARidge(Ridge):
             gscv.fit(Xm_flat, Ym_flat)
             self.cv_stats = gscv.cv_results_
             self.alpha = gscv.best_params_["alpha"]
+            
+        b=super(SARidge, self).fit(Xm_flat, Ym_flat)    
+        return b.coef_, b.intercept_
 
-        super(SARidge, self).fit(Xm_flat, Ym_flat)
     def predict(self, Xm, X0=None):
 
         Y = super(SARidge, self).predict(Xm.reshape((-1, Xm.shape[2])))
@@ -86,20 +88,18 @@ class SARidge(Ridge):
     
     
 class Fock_regression():
-    ## maybe we can make better use of TensorMaps in defining models
-    def __init__(self, orbs, *args, **kwargs):
-        self._orbs = orbs
-        _, self._eldict = _orbs_offsets(orbs)
+    def __init__(self, *args, **kwargs):
+        #self._orbs = orbs
+        #self._frame = frame
         self._args = args
         self._kwargs = kwargs
         self.model_template = SARidge
-        self.block_keys =[]
-        self.block_samples={}
-        self.block_feats={}
         
     def fit(self, feats, fock_bc, slices=None, progress=None):
         self._models = {}
         self._cv_stats = {}
+        self._model_weights = {}
+        self._model_intercepts = {}
         blocks = []
         block_idx = []
         self.block_keys = fock_bc.keys
@@ -109,20 +109,17 @@ class Fock_regression():
             
             parity= (-1)**(li+lj+L)
             tgt = block_fock.values
-            #idx_feats = get_feat_keys(idx_fock, sigma=parity, nu=1)
-            #if idx_feats not in feats.keys:
-            #    print(idx_feats)
-            #    raise ValueError("feature key not found")
              
             block_feats = feats.block(block_type=block_type, spherical_harmonics_l=L,inversion_sigma=parity, species_center=ai, species_neighbor=aj) 
             
             self._models[idx_fock] = self.model_template(L, *self._args, **self._kwargs)
-            self._models[idx_fock].fit(block_feats.values, tgt)            
+            self._model_weights[idx_fock], self._model_intercepts[idx_fock] = self._models[idx_fock].fit(block_feats.values, tgt)
+            self._cv_stats[idx_fock] = self._models[idx_fock].cv_stats
             
-            #print(self._models.keys
-                    
-                    
-    def predict(self, feats, progress=None):
+        return self._model_weights, self._model_intercepts
+
+
+    def predict(self, feats, frame, orbs, progress=None):
         pred_blocks = []
         for idx in self._models.keys():
             block_type, ai, ni, li, aj, nj, lj, L = idx
@@ -143,8 +140,7 @@ class Fock_regression():
             pred_blocks.append(newblock) 
                 
         pred_fock = TensorMap(self.block_keys, pred_blocks)
+        pred_dense = blocks_to_dense(decouple_blocks(pred_fock), frame, orbs)
+        pred_eigvals = np.linalg.eigvalsh(pred_dense)
                         
-        return pred_fock                
-
-                
-                              
+        return pred_dense, pred_eigvals
