@@ -198,6 +198,7 @@ class RascalPairExpansion:
         hypers["expansion_by_species_method"] = "user defined"
 
         ijframes = []
+        all_species = np.unique([f.numbers for f in frames])        
         for f in frames:
             ijf = f.copy()
             ijf.numbers = global_species[: len(f)]
@@ -207,17 +208,12 @@ class RascalPairExpansion:
 
         # Step 2: move data around to follow the storage convention
         keys = Labels(
-            names=["spherical_harmonics_l"],
+            names=["spherical_harmonics_l", "species_center", "species_neighbor"],
             values=np.array(
-                [[l] for l in range(hypers["max_angular"] + 1)],
+                [[l, ai, aj] for l in range(hypers["max_angular"] + 1) for ai in all_species for aj in all_species],
                 dtype=np.int32,
             ),
-        )
-
-        properties = Labels(
-            names=["n"],
-            values=np.array([[n] for n in range(hypers["max_radial"])], dtype=np.int32),
-        )
+        )        
 
         lm_slices = []
         start = 0
@@ -228,7 +224,8 @@ class RascalPairExpansion:
 
         data = []
         samples = []
-        for i, ijf in enumerate(ijframes):
+        species_pairs = []        
+        for i, (ijf, f) in enumerate(zip(ijframes, frames)):
             idata = (
                 calculator.transform(ijf)
                 .get_features(calculator)
@@ -240,16 +237,20 @@ class RascalPairExpansion:
                     len(nonzero[0]), hypers["max_radial"], -1
                 )
             )
+            species_pairs.append(np.asarray([f.numbers[nonzero[0]], f.numbers[nonzero[1]]], dtype=np.int32).T)
             samples.append(np.asarray([nonzero[0] * 0 + i, nonzero[0], nonzero[1]]).T)
-
+        
+        species_pairs = np.vstack(species_pairs)
         data = np.concatenate(data)
         samples = Labels(
-            names=["structure", "center_i", "center_j"],
+            names=["structure", "center", "neighbor"],
             values=np.concatenate(samples).astype(np.int32),
         )
+        
         blocks = []
-        for (l,) in keys:
-            block_data = data[..., lm_slices[l]]
+        for (l, a1, a2) in keys:
+            selected_samples = np.where((species_pairs[:,0]==a1) & (species_pairs[:,1]==a2))[0]
+            block_data = data[selected_samples, ..., lm_slices[l]]
             block_data = block_data.swapaxes(1, 2)
 
             component = Labels(
@@ -257,9 +258,14 @@ class RascalPairExpansion:
                 values=np.array([[m] for m in range(-l, l + 1)], dtype=np.int32),
             )
 
+            properties = Labels(
+                        names=["species_neighbor", "n"],
+                        values=np.array([[a2, n] for n in range(hypers["max_radial"])], dtype=np.int32),
+                    )            
+            
             block = TensorBlock(
                 values=np.copy(block_data),
-                samples=samples,
+                samples=samples[selected_samples],
                 components=[component],
                 properties=properties,
             )
