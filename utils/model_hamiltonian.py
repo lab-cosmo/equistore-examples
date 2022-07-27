@@ -141,6 +141,5 @@ class Fock_regression():
                 
         pred_fock = TensorMap(self.block_keys, pred_blocks)
         pred_dense = blocks_to_dense(decouple_blocks(pred_fock), frame, orbs)
-        pred_eigvals = np.linalg.eigvalsh(pred_dense)
-                        
+        pred_eigvals = np.linalg.eigvalsh(pred_dense) #These are in general not the eigenvalues we are targetting, unless the fock matrix is orthogonal we need to solve a generalized eigenvalue problem. (might need to add a paramter 'overlap' in the function which is 'None' when target is orthogonal, otheriwse takes corresponding overlap matrix.                         
         return pred_dense, pred_eigvals
