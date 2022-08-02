@@ -105,13 +105,14 @@ def main():
         "-potential_exponent",
         dest="potential_exponent",
         type=int,
-        default=1,
         const=1,
         nargs="?",
-        choices=[0, 1],
+        choices=list(range(7)),
+        default=1,
         help="potential exponent: "
-        "p=0 uses Gaussian densities, "
-        "p=1 is LODE using 1/r (Coulomb) densities",
+        "i.e. p=0 uses Gaussian densities, "
+        "p=1 is LODE using 1/r (Coulomb) densities"
+        "p=6 is LODE using 1/r^6 for dispersion",
     )
     parser.add_argument(
         "-subtract_center_contribution",
