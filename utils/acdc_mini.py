@@ -268,3 +268,66 @@ def cg_increment(
         lcut=lcut,
         other_keys_match=other_keys_match
     )    
+
+def _matrix_sqrt(MMT):
+    eva, eve = np.linalg.eigh(MMT)
+    return (eve * np.sqrt(eva)) @ eve.T
+
+def compress_features(x, w=None, threshold=None):
+    new_blocks = []
+    new_idxs = []
+    new_A = []
+    for index, block in x:
+        nfeats = block.values.shape[-1]
+        L = index['spherical_harmonics_l']
+
+        # makes a copy of the features
+        X = block.values.reshape(-1, nfeats).copy()
+        selection = []
+        while len(selection) < nfeats:
+            norm = (X**2).sum(axis=0)
+            sel_idx = norm.argmax()
+            
+            if norm[sel_idx] / (2 * L + 1) / X.shape[0] < threshold:
+                break
+            sel_x = X[:, sel_idx] / np.sqrt(norm[sel_idx])
+            selection.append(sel_idx)
+            
+            # orthogonalize
+            X -= sel_x.reshape(-1, 1) @ (sel_x @ X).reshape(1, -1)
+        selection.sort()
+        nsel = len(selection)
+        if nsel == 0:
+            continue
+        new_idxs.append(tuple(index))
+        
+        Xt = block.values.reshape(-1, nfeats)[:, selection].copy()
+        if w is not None:
+            for i, s in enumerate(selection):
+                Xt[:, i] /= w.block(index).values[0, 0, s]
+        
+        W = np.linalg.pinv(Xt) @ block.values.reshape(-1, nfeats)
+        WW = W @ W.T
+        A = _matrix_sqrt(WW)
+        Xt = Xt @ A
+        new_blocks.append(
+            TensorBlock(
+                values=Xt.reshape(block.values.shape[:2] + (-1,)),
+                samples=block.samples,
+                components=block.components,
+                properties=block.properties[selection],
+            )
+        )
+        new_A.append(
+            TensorBlock(
+                values=A.T.reshape(1, nsel, nsel),
+                components=[Labels(
+                    ["q_comp"], np.arange(nsel, dtype=np.int32).reshape(-1, 1)
+                )],
+                samples=Labels(["dummy"], np.zeros(shape=(1, 1), dtype=np.int32)),
+                properties=block.properties[selection],
+            )
+        )
+        new_sparse = Labels(x.keys.names, np.asarray(new_idxs, dtype=np.int32))
+        
+    return TensorMap(new_sparse, new_blocks), TensorMap(new_sparse, new_A)
