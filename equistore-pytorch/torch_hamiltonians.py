@@ -1,7 +1,8 @@
-from equistore import TensorMap, TensorBlock, Labels
-from .builder import TensorBuilder
-from .clebsh_gordan import ClebschGordanReal
+from torch_builder import TensorBuilder
+from torch_cg import ClebschGordanReal
 import numpy as np
+from equistore import Labels, TensorBlock, TensorMap
+import torch
 
 ###########  I/O UTILITIES ##############
 def fix_pyscf_l1(dense, frame, orbs):
@@ -98,7 +99,8 @@ def dense_to_blocks(dense, frames, orbs):
                         kj_base += orbs_tot[aj]
                         continue
                     block_type = 2  # different species
-                block_data = ham[ki_base:ki_base+orbs_tot[ai], kj_base:kj_base+orbs_tot[aj]]
+                block_data = torch.from_numpy(ham[ki_base:ki_base+orbs_tot[ai], kj_base:kj_base+orbs_tot[aj]])
+                
                 #print(block_data, block_data.shape)
                 if block_type == 1:
                     block_data_plus = (block_data + block_data.T) *1/np.sqrt(2)
@@ -118,6 +120,7 @@ def dense_to_blocks(dense, frames, orbs):
                         if block_idx not in block_builder.blocks:
                             block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32),
                                             components=[_components_idx(li), _components_idx(lj)] )
+                           
                             
                             if block_type == 1:
                                 block_asym = block_builder.add_block(keys=(-1,)+block_idx[1:], properties=np.asarray([[0]], dtype=np.int32), 
@@ -134,14 +137,17 @@ def dense_to_blocks(dense, frames, orbs):
                             block.add_samples(labels=[(A,i,j)],data=block_data_plus[islice, jslice].reshape((1,2*li+1,2*lj+1,1)) )
                             block_asym.add_samples(labels=[(A,i,j)], 
                                                    data=block_data_minus[islice, jslice].reshape((1,2*li+1,2*lj+1,1)) )
+                            
                         else:
                             block.add_samples(labels=[(A,i,j)], data=block_data[islice, jslice].reshape((1,2*li+1,2*lj+1,1)) )
+                           
                         
                         kj_offset += 2*lj+1
                     ki_offset += 2*li+1
                 kj_base+=orbs_tot[aj]
 
             ki_base+=orbs_tot[ai]
+    #print(block_builder.build())
     return block_builder.build()    
 
 
@@ -162,7 +168,7 @@ def blocks_to_dense(blocks, frames, orbs):
         norbs = 0
         for ai in f.numbers:
             norbs += orbs_tot[ai]
-        ham = np.zeros((norbs, norbs), dtype=np.float64)
+        ham = torch.zeros(norbs, norbs)#, dtype=np.float64)
         dense.append(ham)
 
     # loops over block types
@@ -193,21 +199,21 @@ def blocks_to_dense(blocks, frames, orbs):
                 ham[islice, jslice] = block_data[:,:,0].reshape(2*li+1,2*lj+1)
                 ham[jslice, islice] = block_data[:,:,0].reshape(2*li+1,2*lj+1).T            
             elif block_type == 1:
-                ham[islice, jslice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
-                ham[jslice, islice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1).T / np.sqrt(2), dtype=np.float64)
+                ham[islice, jslice] += block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2)
+                ham[jslice, islice] += block_data[:,:,0].reshape(2*li+1,2*lj+1).T / np.sqrt(2)
                 if ki_offset != kj_offset:
                     islice = slice(ki_base+kj_offset, ki_base+kj_offset+2*lj+1)
                     jslice = slice(kj_base+ki_offset, kj_base+ki_offset+2*li+1)
-                    ham[islice, jslice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1).T  / np.sqrt(2), dtype=np.float64)
-                    ham[jslice, islice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
+                    ham[islice, jslice] += block_data[:,:,0].reshape(2*li+1,2*lj+1).T  / np.sqrt(2)
+                    ham[jslice, islice] += block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2)
             elif block_type == -1:
-                ham[islice, jslice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1) / np.sqrt(2), dtype=np.float64)
-                ham[jslice, islice] += np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1).T / np.sqrt(2), dtype=np.float64)
+                ham[islice, jslice] += block_data[:,:,0].reshape(2*li+1,2*lj+1) / np.sqrt(2)
+                ham[jslice, islice] += block_data[:,:,0].reshape(2*li+1,2*lj+1).T / np.sqrt(2)
                 if ki_offset != kj_offset:
                     islice = slice(ki_base+kj_offset, ki_base+kj_offset+2*lj+1)
                     jslice = slice(kj_base+ki_offset, kj_base+ki_offset+2*li+1)
-                    ham[islice, jslice] -= np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1).T  / np.sqrt(2), dtype=np.float64)
-                    ham[jslice, islice] -= np.asarray(block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2), dtype=np.float64)
+                    ham[islice, jslice] -= block_data[:,:,0].reshape(2*li+1,2*lj+1).T  / np.sqrt(2)
+                    ham[jslice, islice] -= block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2)
     return dense
 
 def couple_blocks(blocks, cg=None):
@@ -218,7 +224,7 @@ def couple_blocks(blocks, cg=None):
     block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j", "L"], ["structure", "center", "neighbor"], [["M"]], ["value"])
     for idx, block in blocks:
         block_type, ai, ni, li, aj, nj, lj = tuple(idx)
-        decoupled = np.moveaxis(np.asarray(block.values, dtype=np.float64),-1,-2).reshape((len(block.samples), len(block.properties), 2*li+1, 2*lj+1))
+        decoupled = torch.moveaxis(block.values,-1,-2).reshape((len(block.samples), len(block.properties), 2*li+1, 2*lj+1))
         coupled = cg.couple(decoupled)[(li,lj)]
         for L in coupled:
             block_idx = tuple(idx) + (L,)
@@ -230,7 +236,7 @@ def couple_blocks(blocks, cg=None):
             new_block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
                             components=[_components_idx(L).reshape(-1,1)] )
             new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1), 
-                            data=np.moveaxis(coupled[L], -1, -2 ) )
+                            data=torch.moveaxis(coupled[L], -1, -2 ) )
 
     return block_builder.build()
 
@@ -249,13 +255,13 @@ def decouple_blocks(blocks, cg=None):
         for L in range(np.abs(li-lj), li+lj+1):
             bidx = blocks.keys.position(block_idx+(L,))
             if bidx is not None:
-                coupled[L] = np.moveaxis(blocks.block(bidx).values, -1, -2) 
+                coupled[L] = torch.moveaxis(blocks.block(bidx).values, -1, -2) 
         decoupled = cg.decouple( {(li,lj):coupled})
         
         new_block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
                             components=[_components_idx(li), _components_idx(lj)] )
         new_block.add_samples(labels=block.samples.view(dtype=np.int32).reshape(block.samples.shape[0],-1),
-                            data=np.moveaxis(decoupled, 1, -1))
+                            data=torch.moveaxis(decoupled, 1, -1))
     return block_builder.build()    
 
 def hamiltonian_features(centers, pairs):
