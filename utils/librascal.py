@@ -198,7 +198,7 @@ class RascalPairExpansion:
         hypers["expansion_by_species_method"] = "user defined"
 
         ijframes = []
-        all_species = np.unique([f.numbers for f in frames])        
+        all_species = np.unique(np.hstack([f.numbers for f in frames]))
         for f in frames:
             ijf = f.copy()
             ijf.numbers = global_species[: len(f)]
