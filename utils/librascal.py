@@ -259,8 +259,8 @@ class RascalPairExpansion:
             )
 
             properties = Labels(
-                        names=["species_neighbor", "n"],
-                        values=np.array([[a2, n] for n in range(hypers["max_radial"])], dtype=np.int32),
+                        names=["n"],#["species_neighbor", "n"],
+                        values=np.array([[n] for n in range(hypers["max_radial"])], dtype=np.int32),#np.array([[a2, n] for n in range(hypers["max_radial"])], dtype=np.int32),
                     )            
             
             block = TensorBlock(
