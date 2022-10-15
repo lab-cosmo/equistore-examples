@@ -115,6 +115,7 @@ def cg_combine(
     feature_names=None,
     clebsch_gordan=None,
     lcut=None,
+    filter_sigma = [-1,1],
     other_keys_match=None,
     mp=False
 ):
@@ -288,6 +289,8 @@ def cg_combine(
             for L in range(np.abs(lam_a - lam_b), 1 + min(lam_a + lam_b, lcut)):
                 # determines parity of the block
                 S = sigma_a * sigma_b * (-1) ** (lam_a + lam_b + L)
+                if not S in filter_sigma:
+                    continue
                 NU = order_a + order_b                
                 KEY = (NU, S, L,) + OTHERS
                 if not KEY in X_idx:
@@ -379,7 +382,7 @@ def cg_combine(
     return X
 
 def cg_increment(
-    x_nu, x_1, clebsch_gordan=None, lcut=None,
+    x_nu, x_1, clebsch_gordan=None, lcut=None, filter_sigma=[-1,1],
     other_keys_match=None, mp=False
 ):
     """Specialized version of the CG product to perform iterations with nu=1 features"""
@@ -402,6 +405,7 @@ def cg_increment(
         feature_names=feature_names,
         clebsch_gordan=clebsch_gordan,
         lcut=lcut,
+        filter_sigma=filter_sigma,
         other_keys_match=other_keys_match, mp=mp
     )
 
