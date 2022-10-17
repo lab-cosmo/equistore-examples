@@ -6,6 +6,107 @@ from utils.clebsh_gordan import ClebschGordanReal
 from utils.librascal import  RascalSphericalExpansion, RascalPairExpansion
 from rascal.representations import SphericalExpansion
 
+def contract_three_center_property(Yii1i2, numpy = True):
+    if len(Yii1i2.keys.dtype)>4: #i.e. not a standard acdc tensormap 
+        Yii1i2.keys_to_properties('species_neighbor_b')
+        Yii1i2.keys_to_properties('species_neighbor_a')
+    contracted_Yii1i2_blocks=[]
+
+    property_names = Yii1i2.property_names
+    for key,block in Yii1i2:
+        contract_values=[]
+        contract_properties=[]
+        contract_samples=list(product(np.unique(block.samples['structure']), np.unique(block.samples['center'])))
+        for isample, sample in enumerate(contract_samples):
+            sample_idx = [idx for idx, tup in enumerate(block.samples) if tup[0]==sample[0] and tup[1]==sample[1]]
+            contract_values.append(block.values[sample_idx].sum(axis=0)) # sum i_1, i_2
+#             print(key, block.values[sample_idx].sum(axis=0).shape,sample,sample_idx)
+#         print(key, len(contract_values), torch.vstack(contract_values).reshape(len(contract_samples),contract_values[0].shape[0] ,-1).shape)
+        if numpy: 
+#             print("contract 3 center", np.vstack(contract_values).reshape(len(contract_samples),contract_values[0].shape[0] ,-1).shape)
+            new_block = TensorBlock(values = np.vstack(contract_values).reshape(len(contract_samples),contract_values[0].shape[0] ,-1),
+                                        samples = Labels(['structure', 'center'], np.asarray(contract_samples, np.int32)), 
+                                         components = block.components,
+                                         properties= Labels(list(property_names), block.properties.asarray())
+                                )
+        else:
+#             print("contract 3 center", torch.vstack(contract_values).reshape(len(contract_samples),contract_values[0].shape[0] ,-1).shape)
+            
+            new_block = TensorBlock(values = torch.vstack(contract_values).reshape(len(contract_samples),contract_values[0].shape[0] ,-1),
+                                #eshape(len(contract_samples),contract_values[0].shape[0] ,-1),
+                                        samples = Labels(['structure', 'center'], np.asarray(contract_samples, np.int32)), 
+                                         components = block.components,
+                                         properties= Labels(list(property_names), block.properties.asarray())
+                                )
+
+        contracted_Yii1i2_blocks.append(new_block)
+
+    contracted_Yii1i2 = TensorMap(Yii1i2.keys, contracted_Yii1i2_blocks)
+    return contracted_Yii1i2
+
+
+def atom_to_structure(X, numpy = True):
+    # go from rhoi to structure 
+    #ASSUMING - homogeneous dataset - all frames have same molecule
+    struct_blocks=[]
+    ele = np.unique(X.keys['species_center'])
+    final_keys = list(set([tuple(list(x)[:-1]) for x in X.keys]))
+    for key, block in X:
+        contract_values=[]
+        contract_properties=[]
+        contract_samples = np.asarray(np.unique(block.samples['structure'])).reshape(-1,1)
+        for isample, sample in enumerate(contract_samples):
+            sample_idx = [idx for idx, tup in enumerate(block.samples) if tup[0]==sample]
+            contract_values.append(block.values[sample_idx].sum(axis=0))
+#             print(key, sample_idx)
+        if numpy: 
+            new_block = TensorBlock(values = np.vstack(contract_values).reshape(len(contract_samples),contract_values[0].shape[0] ,-1),
+                                samples = Labels(['structure'], np.asarray(contract_samples, np.int32)), 
+                                components = block.components,
+                                properties= block.properties
+                                    )
+        else:
+#             print("structure", torch.vstack(contract_values).reshape(len(contract_samples),contract_values[0].shape[0] ,-1).shape)
+            new_block = TensorBlock(values = torch.vstack(contract_values).reshape(len(contract_samples),contract_values[0].shape[0] ,-1),
+                                samples = Labels(['structure'], np.asarray(contract_samples, np.int32)), 
+                                components = block.components,
+                                properties= block.properties
+                                    )
+        struct_blocks.append(new_block)
+
+    struct_X = TensorMap(X.keys, struct_blocks)
+
+
+    all_structures = np.unique(np.concatenate([block.samples for (k,block) in struct_X]))
+    values = torch.zeros((len(all_structures), 1, len(struct_X.block(0).properties)))
+    for species in ele: 
+        values += struct_X.block(species_center = species).values
+
+    final_block = TensorBlock(values = values,
+                        samples = Labels(['structure'], np.asarray(all_structures, np.int32).reshape(-1,1)), 
+                        components = [Labels(['spherical_component_m'], np.asarray([[0]], np.int32))],
+                        properties= struct_X.block(0).properties
+               )
+    struct_X = TensorMap(Labels(['feat'], np.asarray([[0]], np.int32)), [final_block])
+    return struct_X
+
+def compare_with_rho2i(contracted_rhoii1i2, rho2i):
+    assert len(rho2i) == len(contracted_rhoii1i2)
+    for rho2_k, rho2_b in rho2i:
+        contracted_block = contracted_rhoii1i2.block(order_nu = rho2_k[0], inversion_sigma = rho2_k[1], spherical_harmonics_l = rho2_k[2], species_center = rho2_k[3])
+        idx = []
+        cidx = []
+        for i,p in enumerate(rho2_b.properties):
+            find_p = (p['species_neighbor_a'], p['species_neighbor_b'], p['n_1_a'], p['k_2'], p['n_1_b'], p['l_2'])
+        #     print(p, find_p)
+            for ip,cp in enumerate(contracted_block.properties):
+                if tuple(find_p) == tuple(cp) :
+                    idx.append(i)
+                    cidx.append(ip)
+                    break
+        print(rho2_k, np.linalg.norm(rho2_b.values[:,:,idx] - contracted_block.values[:,:,cidx]))
+
+        
 def relabel_key_contract(tensormap):
     """ Relabel the key to contract with other_keys_match, for ACDC - 'species_center' gets renamed to 'species_contract'
     while for N-center ACDC 'specoes_neighbor' gets renamed to 'species_contract'  """
