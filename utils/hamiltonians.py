@@ -289,7 +289,7 @@ def hamiltonian_features(centers, pairs):
             for smp_up in range(len(idx_up)):
                 ij = b.samples[idx_up[smp_up]][["center", "neighbor"]]
                 for smp_lo in range(smp_up, len(idx_lo)):
-                    ij_lo = b.samples[idx_up[smp_up]][["neighbor", "center"]]
+                    ij_lo = b.samples[idx_lo[smp_lo]][["neighbor", "center"]]
                     if b.samples[idx_up[smp_up]]["structure"] != b.samples[idx_lo[smp_lo]]["structure"]:
                         raise ValueError(f"Could not find matching ji term for sample {b.samples[idx_up[smp_up]]}") 
                     if ij == ij_lo:

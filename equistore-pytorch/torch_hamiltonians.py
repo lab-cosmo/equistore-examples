@@ -289,16 +289,17 @@ def hamiltonian_features(centers, pairs):
             if len(idx_up) ==0:
                 continue
             idx_lo = np.where(b.samples["center"]>b.samples["neighbor"])[0]
+            
             # we need to find the "ji" position that matches each "ij" sample. 
             # we exploit the fact that the samples are sorted by structure to do a "local" rearrangement
             smp_up, smp_lo = 0, 0
             for smp_up in range(len(idx_up)):
                 ij = b.samples[idx_up[smp_up]][["center", "neighbor"]]
                 for smp_lo in range(smp_up, len(idx_lo)):
-                    ij_lo = b.samples[idx_up[smp_up]][["neighbor", "center"]]
+                    ij_lo = b.samples[idx_lo[smp_lo]][["neighbor", "center"]]                    
                     if b.samples[idx_up[smp_up]]["structure"] != b.samples[idx_lo[smp_lo]]["structure"]:
                         raise ValueError(f"Could not find matching ji term for sample {b.samples[idx_up[smp_up]]}") 
-                    if ij == ij_lo:
+                    if tuple(ij) == tuple(ij_lo):
                         idx_lo[smp_up], idx_lo[smp_lo] = idx_lo[smp_lo], idx_lo[smp_up]                        
                         break            
             
