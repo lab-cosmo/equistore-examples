@@ -14,6 +14,8 @@ def normalize(descriptor):
         assert len(block.values.shape) == 2
 
         norm = ops.norm(block.values, axis=1)
+        # prevent division by 0
+        norm[norm == 0] = 1.0
         normalized_values = block.values / norm[:, None]
 
         new_block = TensorBlock(

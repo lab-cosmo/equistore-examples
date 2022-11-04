@@ -135,7 +135,7 @@ def compute_power_spectrum(spherical_expansion_1, spherical_expansion_2=None):
                     new_row = gradients_sample_mapping[tuple(sample)]
                     gradient_data[new_row, :, :] += row
 
-                assert gradient_1.components[0].names == ("gradient_direction",)
+                assert gradient_1.components[0].names == ("direction",)
                 block.add_gradient(
                     "positions",
                     gradient_data,
