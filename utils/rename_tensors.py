@@ -48,7 +48,7 @@ def get_tensorblock_name_structure(tensorblock: equistore.block.TensorBlock) -> 
         "components": [c.names for c in tensorblock.components],
         "properties": tensorblock.properties.names,
     }
-    if type(tensorblock) == equistore.block.TensorBlock:
+    if isinstance(tensorblock, equistore.block.TensorBlock):
         names.update(
             {
                 "gradients": {
