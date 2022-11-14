@@ -5,6 +5,7 @@
 Calculations may take along time and memory. Be careful!
 """
 import argparse
+import logging
 import os
 import sys
 from typing import Dict, List
@@ -15,10 +16,19 @@ import ase.io
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 import equistore.io
-from utils.pylode import PyLODESphericalExpansion
+from utils.pylode import (
+    PyLODESphericalExpansion,
+    PyLODESphericalExpansionRealspace,
+)
+
+# Print all log message to the console
+logging.basicConfig(level=logging.DEBUG)
 
 
-def precompute_lode(frames: List[ase.Atoms], hypers: Dict, show_progress: bool = False):
+def precompute_lode(frames: List[ase.Atoms],
+                    hypers: Dict,
+                    realspace: bool = False,
+                    show_progress: bool = False):
     """Calculate LODE descripor from an ase list of atoms.
 
     Parameters
@@ -28,6 +38,8 @@ def precompute_lode(frames: List[ase.Atoms], hypers: Dict, show_progress: bool =
     hypers : Dict
         Dictionary containng the LODE hyperparameters.
         See `pylode.DensityProjectionCalculator` for details.
+    realspace : bool
+        Use realspace implementation for calculating features.
     show_progress : bool
         Show a progress bar
 
@@ -36,7 +48,11 @@ def precompute_lode(frames: List[ase.Atoms], hypers: Dict, show_progress: bool =
     descriptor : aml_storage.descriptor.Descriptor
         The feature descriptor
     """
-    calculator = PyLODESphericalExpansion(hypers)
+    if realspace:
+        calculator = PyLODESphericalExpansionRealspace(hypers)
+    else:
+        calculator = PyLODESphericalExpansion(hypers)
+
     descriptor = calculator.compute(frames=frames, show_progress=show_progress)
 
     return descriptor
@@ -59,6 +75,12 @@ def main():
         type=str,
         help="slicing string for trjectory slicing",
         default=":",
+    )
+    parser.add_argument(
+        "-realspace",
+        dest="realspace",
+        action="store_true",
+        help="Use the realspace implementation for calculating features.",
     )
     parser.add_argument(
         "-max_radial",
@@ -94,9 +116,10 @@ def main():
         "-kcut",
         dest="kcut",
         type=float,
-        help="Cutoff for the kspace sum. "
+        help="Cutoff for the kspace sum if. "
         "If `None` it is set to `1.2 * π / smearing`"
-        "which is a reasonable estimate for many systems.",
+        "which is a reasonable estimate for many systems."
+        "The option only has an effect without the `-realspace` flag.",
         default=None,
     )
     parser.add_argument(
@@ -147,10 +170,18 @@ def main():
     frames = ase.io.read(
         args.__dict__.pop("input_file"), index=args.__dict__.pop("index")
     )
+
+    realspace = args.__dict__.pop("realspace")
+    if realspace:
+        args.__dict__.pop("kcut")
+    
     equistore.io.save(
         args.__dict__.pop("outfile"),
-        precompute_lode(frames, args.__dict__, show_progress=True),
-        use_numpy=True,
+        precompute_lode(frames,
+                        args.__dict__,
+                        realspace=realspace,
+                        show_progress=True),
+        use_numpy=True
     )
 
 

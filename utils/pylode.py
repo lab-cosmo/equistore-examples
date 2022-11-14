@@ -3,13 +3,17 @@ import copy
 import numpy as np
 
 import ase
-from pylode import DensityProjectionCalculator
+from pylode import (
+    DensityProjectionCalculator,
+    DensityProjectionCalculatorRealspace
+)
 
 from equistore import Labels, TensorBlock, TensorMap
 
 
-class PyLODESphericalExpansion:
-    def __init__(self, hypers):
+class _PyLODESphericalExpansion:
+    def __init__(self, calculatorclass, hypers):
+        self.calculatorclass = calculatorclass
         self._hypers = copy.deepcopy(hypers)
 
     def compute(
@@ -25,7 +29,7 @@ class PyLODESphericalExpansion:
             map(int, np.unique(np.concatenate([f.numbers for f in frames])))
         )
 
-        calculator = DensityProjectionCalculator(**hypers)
+        calculator = self.calculatorclass(**hypers)
         calculator.transform(frames, show_progress=show_progress)
         data = calculator.features
         info = calculator.representation_info
@@ -142,3 +146,13 @@ class PyLODESphericalExpansion:
             blocks.append(block)
 
         return TensorMap(sparse, blocks)
+
+
+class PyLODESphericalExpansion(_PyLODESphericalExpansion):
+    def __init__(self, hypers):
+        super().__init__(DensityProjectionCalculator, hypers)
+
+
+class PyLODESphericalExpansionRealspace(_PyLODESphericalExpansion):
+    def __init__(self, hypers):
+        super().__init__(DensityProjectionCalculatorRealspace, hypers)
