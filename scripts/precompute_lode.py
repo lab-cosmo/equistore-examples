@@ -91,15 +91,24 @@ def main():
         default=0.3,
     )
     parser.add_argument(
+        "-kcut",
+        dest="kcut",
+        type=float,
+        help="Cutoff for the kspace sum. "
+        "If `None` it is set to `1.2 * π / smearing`"
+        "which is a reasonable estimate for many systems.",
+        default=None,
+    )
+    parser.add_argument(
         "-radial_basis",
         dest="radial_basis",
         type=str,
         default="monomial",
         const="monomial",
         nargs="?",
-        choices=["monomial", "GTO", "GTO_primitive"],
+        choices=["monomial", "GTO", "GTO_primitive", "GTO_analytical"],
         help="The radial basis. Currently implemented "
-        "are 'GTO_primitive', 'GTO' and 'monomial'.",
+        "are 'GTO_analytical', 'GTO_primitive', 'GTO', 'monomial'.",
     )
     parser.add_argument(
         "-potential_exponent",
