@@ -97,11 +97,20 @@ def main():
         default=6,
     )
     parser.add_argument(
-        "-cutoff_radius",
-        dest="cutoff_radius",
+        "-radial_basis_radius",
+        dest="radial_basis_radius",
         type=float,
         help="Environment cutoff (Å)",
         default=4.0,
+    )
+    parser.add_argument(
+        "-cutoff_radius",
+        dest="cutoff_radius",
+        type=float,
+        help="Spherical real space cutoff to use for atomic environments (Å). "
+             "If `None` the same cutoff_radius as radial_basis_radius is "
+             "used. Only applies if realspace flag is set.",
+        default=None,
     )
     parser.add_argument(
         "-smearing",
@@ -171,9 +180,12 @@ def main():
         args.__dict__.pop("input_file"), index=args.__dict__.pop("index")
     )
 
+    # Remove paramaters only apply to real or kspace implementation.
     realspace = args.__dict__.pop("realspace")
     if realspace:
         args.__dict__.pop("kcut")
+    else:
+        args.__dict__.pop("cutoff_radius")
     
     equistore.io.save(
         args.__dict__.pop("outfile"),
