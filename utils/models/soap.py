@@ -2,6 +2,7 @@ import numpy as np
 from math import sqrt
 
 from equistore import Labels, TensorBlock, TensorMap
+from equistore.operations import slice_block
 
 import utils.models.operations as ops
 
@@ -49,8 +50,15 @@ def compute_power_spectrum(spherical_expansion_1, spherical_expansion_2=None):
             if l1 != l2 or cs1 != cs2:
                 continue
 
-            # with the same central species, we should have the same samples
-            assert np.all(spx_1.samples == spx_2.samples)
+            # Find common samples if samples are not the same
+            if not np.all(spx_1.samples == spx_2.samples):
+                common_samples = Labels(
+                    names=spx_1.samples.names,
+                    values=np.asarray(
+                        np.intersect1d(spx_1.samples, spx_2.samples).tolist()))
+
+                spx_1 = slice_block(spx_1, samples_to_slice=common_samples)
+                spx_2 = slice_block(spx_2, samples_to_slice=common_samples)
 
             # Avoid doubly computing / storing invariants that are
             # the same by symmetry of the neighbor species.
