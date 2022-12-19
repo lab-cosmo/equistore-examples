@@ -57,8 +57,8 @@ def compute_power_spectrum(spherical_expansion_1, spherical_expansion_2=None):
                     values=np.asarray(
                         np.intersect1d(spx_1.samples, spx_2.samples).tolist()))
 
-                spx_1 = slice_block(spx_1, samples_to_slice=common_samples)
-                spx_2 = slice_block(spx_2, samples_to_slice=common_samples)
+                spx_1 = slice_block(spx_1, samples=common_samples)
+                spx_2 = slice_block(spx_2, samples=common_samples)
 
             # Avoid doubly computing / storing invariants that are
             # the same by symmetry of the neighbor species.
