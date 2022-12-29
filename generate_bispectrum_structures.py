@@ -29,7 +29,7 @@ def generate_nu3_degen_structs(r,n,psi,z1,z2, center_species='C', ring_species='
         positions[1:n+1, 2] = z1
 #         print(positions,'\n')
         positions[n+1:1+2*n,:2] = layer2
-        positions[n+1:1+2*n, 2] = z1
+        positions[n+1:1+2*n, 2] = -z1
 #         print(positions,'\n')
         #add z1 to layer1
         #add -z1 to layer2
