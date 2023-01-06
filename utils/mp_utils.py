@@ -208,8 +208,6 @@ def flatten(x):
             flat_list_tuples.append(flatten(aa))
         return flat_list_tuples
 
-
-
 def cg_combine(
     x_a,
     x_b,
@@ -343,24 +341,53 @@ def cg_combine(
                     b_slice = []
                     samples_final = []
                     smp_a, smp_b = 0, 0
+                    """
                     while smp_b < samples_b.shape[0]:
                         idx= [idx for idx, tup in enumerate(samples_a) if tup[0] ==samples_b[smp_b]["structure"] and tup[1] == samples_b[smp_b]["center"]]
                         neighbor_slice.extend(idx)
                         b_slice.extend([smp_b]*len(idx))
                         samples_final.extend(flatten(list(product([samples_b[smp_b]],block_a.samples.asarray()[idx][:,-1]))))
                         smp_b+=1
+                    """                    
+                    sc_b = (-1,-1)
+                    while smp_b < samples_b.shape[0]:    
+                        # checks if structure index needs updating
+                        if samples_b[smp_b]["center"] != sc_b[1] or samples_b[smp_b]["structure"] != sc_b[0]:  
+                            # checks if structure index needs updating
+                            sc_b = samples_b[smp_b][["structure", "center"]]
+                            idx = np.where( (samples_b[smp_b]["structure"] == samples_a["structure"] ) & 
+                                           (samples_b[smp_b]["center"] == samples_a["center"] ))[0]
+                            smp_a_idx = samples_a["neighbor"][idx].view(np.int32)
+                        neighbor_slice.extend(idx)    
+                        b_slice.extend([smp_b]*len(idx))
+                        #samples_final.extend(flatten(list(product([samples_b[smp_b]],smp_a_idx))))
+                        #samples_final.extend(np.hstack([[tuple(samples_b[smp_b-1])]*8, smp_a_idx[:,np.newaxis] ]) )
+                        samples_final.extend([tuple(samples_b[smp_b]) + (idx,) for idx in smp_a_idx])
+                        smp_b+=1
                     neighbor_slice = np.asarray(neighbor_slice)
     #                 print(index_a, index_b, neighbor_slice)#,  block_a.samples[neighbor_slice], block_b.samples)
-                    samples_final = Labels(["structure", "center", "neighbor_1", "neighbor_2"], np.asarray(samples_final, dtype=np.int32))
-
+                    samples_final = Labels(["structure", "center", "neighbor_1", "neighbor_2"], np.asarray(samples_final, dtype=np.int32))                        
                 elif "neighbor_1" in samples_b.names: 
                     # combining three center feature with rho_{i i1 i2}
                     neighbor_slice = []
                     b_slice = []
                     smp_a, smp_b = 0, 0
+                    """
                     while smp_b < samples_b.shape[0]:
                         idx= [idx for idx, tup in enumerate(samples_a) if tup[0] ==samples_b[smp_b]["structure"] and tup[1] == samples_b[smp_b]["center"]]
                         neighbor_slice.extend(idx)
+                        b_slice.extend([smp_b]*len(idx))
+                        smp_b+=1
+                    """
+                    sc_b = (-1,-1)
+                    while smp_b < samples_b.shape[0]:    
+                        # checks if structure index needs updating
+                        if samples_b[smp_b]["center"] != sc_b[1] or samples_b[smp_b]["structure"] != sc_b[0]:  
+                            # checks if structure index needs updating
+                            sc_b = samples_b[smp_b][["structure", "center"]]
+                            idx = np.where( (samples_b[smp_b]["structure"] == samples_a["structure"] ) & 
+                                           (samples_b[smp_b]["center"] == samples_a["center"] ))[0]
+                        neighbor_slice.extend(idx)    
                         b_slice.extend([smp_b]*len(idx))
                         smp_b+=1
                     neighbor_slice = np.asarray(neighbor_slice)

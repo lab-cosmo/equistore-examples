@@ -1,8 +1,8 @@
 import numpy as np 
 import ase 
 
-def points_on_circle(r,n=3):
-    return np.array([(r * np.cos(2*np.pi/n*x), r * np.sin(2*np.pi/n*x) ) for x in range(n)]).reshape(n,2)
+def points_on_circle(r,phi):
+    return np.array([[r * np.cos(p), r * np.sin(p)] for p in phi])
 
 def rotate_vector_2d(psi, cartesian_pos):
     """
@@ -16,11 +16,11 @@ def rotate_vector_2d(psi, cartesian_pos):
 
     return np.einsum("ij, nj-> ni", matrix, cartesian_pos)
 
-def generate_nu3_degen_structs(r,n,psi,z1,z2, center_species='C', ring_species='H', z2species='O'):
+def generate_nu3_degen_structs(r,phi,psi,z1,z2, center_species='C', ring_species='H', z2species='O'):
     from ase import Atoms
     structs = []
-    layer1 = points_on_circle(r,n)
-    assert len(layer1) ==n
+    n = len(phi)
+    layer1 = points_on_circle(r,phi)    
     layer2 = rotate_vector_2d(psi, layer1)
     for idx_str in range(2):
         positions = np.zeros((2*n+2,3))
