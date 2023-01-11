@@ -19,9 +19,14 @@ def _remove_suffix(names, new_suffix=""):
 def acdc_standardize_keys(descriptor):
     """ Standardize the naming scheme of density expansion coefficient blocks (nu=1) """
 
-    key_names = descriptor.keys.names
+    key_names = np.array(descriptor.keys.names)
     if not "spherical_harmonics_l" in key_names:
         raise ValueError("Descriptor missing spherical harmonics channel key `spherical_harmonics_l`")
+    if "species_atom_1" in key_names:
+        key_names[np.where(key_names=="species_atom_1")[0]] = "species_center"
+    if "species_atom_2" in key_names:
+        key_names[np.where(key_names=="species_atom_2")[0]] = "species_neighbor"
+    key_names = tuple(key_names)
     blocks = []
     keys = []
     for key, block in descriptor:
@@ -32,8 +37,16 @@ def acdc_standardize_keys(descriptor):
             key = (1,) + key
         keys.append(key)
         property_names = _remove_suffix(block.properties.names, "_1")
+        sample_names = [ "center" if b == "first_atom" else ("neighbor" if b == "second_atom" else b) for b in block.samples.names ]
+        # drops pair_id which we don't need in this application
+        if "pair_id" in sample_names:
+            new_samples = Labels( [n for n in sample_names if n!="pair_id"],
+                                 np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names))[:,[i for i in range(len(block.samples.names)) if block.samples.names[i] != "pair_id"]])
+        else:
+            new_samples = Labels(sample_names, np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names)) )
         blocks.append(
-            TensorBlock( values=block.values, samples=block.samples, components=block.components, 
+            TensorBlock( values=block.values, samples=new_samples,
+                        components=block.components, 
                          properties=Labels(property_names, np.asarray(block.properties.view(dtype = np.int32)).reshape(-1,len(property_names)) )
             ) )
     
