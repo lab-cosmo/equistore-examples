@@ -216,6 +216,7 @@ def cg_combine(
     lcut=None,
     filter_sigma = [-1,1],
     other_keys_match=None,
+    sorted_l="auto",
     mp=False
 ):
     """
@@ -231,10 +232,11 @@ def cg_combine(
     if clebsch_gordan is None:
         clebsch_gordan = ClebschGordanReal(lcut) 
 
-    similar=True
-    if "neighbor" in x_b.sample_names: #and "neighbor" not in x_a.sample_names:
-        #similar only when combining two rho1i's (not rho1i with gij or |r_ij> with |r_ik>)
-        similar = False
+    if sorted_l == "auto":
+        sorted_l=True
+        if "neighbor" in x_b.sample_names or "neighbor" in x_a.sample_names:
+            #similar only when combining two rho1i's (not rho1i with gij or |r_ij> with |r_ik>)
+            sorted_l = False
 
     other_keys_a = tuple(name for name in x_a.keys.names if name not in ["spherical_harmonics_l", "order_nu", "inversion_sigma"] )
     other_keys_b = tuple(name for name in x_b.keys.names if name not in ["spherical_harmonics_l", "order_nu", "inversion_sigma"] )
@@ -290,7 +292,7 @@ def cg_combine(
             samples_b = block_b.samples
             samples_final = samples_b
             b_slice = list(range(len(samples_b)))
-            if similar and lam_b<lam_a:
+            if sorted_l and lam_b<lam_a:
                 continue
 
             if other_keys_match is None:            
