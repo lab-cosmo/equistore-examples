@@ -1,9 +1,0 @@
-jupyter
-
-torch
-
-rascal @ https://github.com/lab-cosmo/librascal/archive/5f6dd49c91e0e9750be3fbb1d601ec97cfac6097.zip
-rascaline @ https://github.com/Luthaf/rascaline/archive/356736e41a98389b8024ba08de690ba7fb7af0fc.zip
-equistore @ https://github.com/lab-cosmo/equistore/archive/0eb5fc09e29ca1780de933ddad0394bf30be076e.zip
-
-skcmosmo
