@@ -46,7 +46,7 @@ def single_partial_derivative(parameters, diff_param_names=['r', 'phi', 'psi', '
     #parameters is a list of [r,phi, psi, z1,z2, sp1, sp2, sp3]
     #diff_param cane be r, phi, psi, z1, z2
     #as a sanity check, we will compute the derivative for both the +,- structures 
-    if diff_param is None or isinstance('z2', list): 
+    if diff_param is None or isinstance(diff_param, list): 
         raise ValueError("please specify a single variable name along which to compute partial derivative")
         
     delta_parameters = parameters.copy()
