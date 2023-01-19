@@ -41,3 +41,31 @@ def generate_nu3_degen_structs(r,phi,psi,z1,z2, center_species='C', ring_species
         structs.append(atoms)
 
     return structs
+
+def single_partial_derivative(parameters, diff_param_names=['r', 'phi', 'psi', 'z1', 'z2'], diff_param=None, delta=1e-6):
+    #parameters is a list of [r,phi, psi, z1,z2, sp1, sp2, sp3]
+    #diff_param cane be r, phi, psi, z1, z2
+    #as a sanity check, we will compute the derivative for both the +,- structures 
+    if diff_param is None or isinstance('z2', list): 
+        raise ValueError("please specify a single variable name along which to compute partial derivative")
+        
+    delta_parameters = parameters.copy()
+    diff_idx = diff_param_names.index(diff_param)
+    delta_parameters[diff_idx]+=delta
+    coords_plus, coords_minus = generate_nu3_degen_structs(*parameters )
+    delta_coords_plus, delta_coords_minus = generate_nu3_degen_structs(*delta_parameters)
+    
+    partial_derivative_plus = (delta_coords_plus.positions - coords_plus.positions)/delta
+    partial_derivative_minus = (delta_coords_minus.positions - coords_minus.positions)/delta
+    return partial_derivative_plus, partial_derivative_minus
+
+def derivatives_finite_differences(parameters, diff_param = None, delta=1e-6):
+    # use the single partial derivative across multiple parameters if necessary 
+    # using f(x+deltax, y+deltay) = f(x,y) + partial f/x deltax + partial f/y delta y 
+    if diff_param is None or not isinstance(diff_param, list): 
+        raise ValueError("please specify variable name(s) along which to compute partial derivative, single param should also be passed as list")
+    
+    for p in diff_param: 
+        der_plus, der_minus = single_partial_derivative(parameters, diff_param_names=['r', 'phi', 'psi', 'z1', 'z2'], diff_param=p, delta=delta)
+    
+    return None
