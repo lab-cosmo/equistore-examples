@@ -59,13 +59,65 @@ def single_partial_derivative(parameters, diff_param_names=['r', 'phi', 'psi', '
     partial_derivative_minus = (delta_coords_minus.positions - coords_minus.positions)/delta
     return partial_derivative_plus, partial_derivative_minus
 
-def derivatives_finite_differences(parameters, diff_param = None, delta=1e-6):
-    # use the single partial derivative across multiple parameters if necessary 
-    # using f(x+deltax, y+deltay) = f(x,y) + partial f/x deltax + partial f/y delta y 
-    if diff_param is None or not isinstance(diff_param, list): 
-        raise ValueError("please specify variable name(s) along which to compute partial derivative, single param should also be passed as list")
+def analytical_partial_derivative(parameters, diff_param_names=['r', 'phi', 'psi', 'z1', 'z2'], diff_param=None):
+    #parameters is a list of [r,phi, psi, z1,z2, sp1, sp2, sp3]
+    #diff_param cane be r, phi, psi, z1, z2
+    r,phi, psi, z1,z2, sp1, sp2, sp3 = parameters
+    partial_derivative_plus={}
+    partial_derivative_minus={}
+    coords_plus, coords_minus = generate_nu3_degen_structs(*parameters )
+    coords_plus = coords_plus.positions
+    coords_minus = coords_minus.positions
+
+    for par in diff_param_names:
+        partial_derivative_plus[par] = np.zeros_like(coords_plus)
+        partial_derivative_minus[par]= np.zeros_like(coords_minus)
+
+    n = len(phi)
+    #partial wrt z1
+    partial_derivative_plus['z1'][1:n+1, 2] = 1 # z coord of layer 1 is z1
+    partial_derivative_plus['z1'][n+1:2*n+1, 2] = -1  # z coord of layer 1 is -z1
+    partial_derivative_minus['z1'][1:n+1, 2] = 1
+    partial_derivative_minus['z1'][n+1:2*n+1, 2] = -1
+    #partial wrt z2
+    partial_derivative_plus['z2'][2*n+1, 2] = 1  # plus structure's last atom has z coord is z2 
+    partial_derivative_minus['z2'][2*n+1, 2] = -1 # plus structure's last atom has z coord is -z2
     
-    for p in diff_param: 
-        der_plus, der_minus = single_partial_derivative(parameters, diff_param_names=['r', 'phi', 'psi', 'z1', 'z2'], diff_param=p, delta=delta)
+    #partial wrt psi
+    psimatrix = np.zeros((3,3))
+    psimatrix[0,0] = -np.sin(psi)
+    psimatrix[0,1] = -np.cos(psi)
+    psimatrix[1,0] = np.cos(psi)
+    psimatrix[1,1] = -np.sin(psi)
+    psimatrix[2,2] = 1
+    partial_derivative_plus['psi'][n+1:2*n+1] = np.einsum("ij, nj-> ni", psimatrix, coords_plus[1:n+1])  
+    partial_derivative_minus['psi'] = partial_derivative_plus['psi'].copy()
     
-    return None
+    #partial wrt phi
+    # x = rcos(phi) y =rsin(phi) --> x' = -y and y' = x
+    partial_derivative_plus['phi'][:,0] = -coords_plus[:,1]
+    partial_derivative_plus['phi'][:,1] = coords_plus[:,0]
+    partial_derivative_minus['phi'] = partial_derivative_plus['phi'].copy()
+    
+    #partial wrt r 
+    #  x' = cos(phi), y' = sin(phi)
+    assert isinstance(phi,list)
+    phi_2n = np.array(phi+phi)
+    partial_derivative_plus['r'][1:2*n+1, 0] = np.cos(phi_2n)
+    partial_derivative_plus['r'][1:2*n+1, 0] = np.sin(phi_2n)
+    
+    partial_derivative_minus['r'] = partial_derivative_plus['r'].copy()
+    
+    if diff_param is None:
+        return partial_derivative_plus, partial_derivative_minus
+    elif isinstance(diff_param, list): 
+        plus = {}
+        minus={}
+        for p in diff_param:
+            plus[p] = partial_derivative_plus[p]
+            minus[p] = partial_derivative_minus[p]
+            
+        return plus, minus
+    else: 
+        return partial_derivative_plus[diff_param],partial_derivative_minus[diff_param]
+    
