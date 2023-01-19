@@ -24,20 +24,16 @@ def generate_nu3_degen_structs(r,phi,psi,z1,z2, center_species='C', ring_species
     layer2 = rotate_vector_2d(psi, layer1)
     for idx_str in range(2):
         positions = np.zeros((2*n+2,3))
-    #     positions[0] = [0,0,0] #central atom
         positions[1:n+1,:2] = layer1
         positions[1:n+1, 2] = z1
-#         print(positions,'\n')
         positions[n+1:1+2*n,:2] = layer2
         positions[n+1:1+2*n, 2] = -z1
-#         print(positions,'\n')
         #add z1 to layer1
         #add -z1 to layer2
         if idx_str ==0:
             positions[2*n+1, 2] = z2
         else:
             positions[2*n+1, 2] = -z2
-#         print(positions,'\n')
 
         atom_string = center_species + ring_species*(2*n) + z2species
         atoms = Atoms(atom_string, positions=positions, cell=np.eye(3)*10)
@@ -45,5 +41,3 @@ def generate_nu3_degen_structs(r,phi,psi,z1,z2, center_species='C', ring_species
         structs.append(atoms)
 
     return structs
-
-
