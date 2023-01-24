@@ -36,7 +36,7 @@ def generate_nu3_degen_structs(r,phi,psi,z1,z2, center_species='C', ring_species
             positions[2*n+1, 2] = -z2
 
         atom_string = center_species + ring_species*(2*n) + z2species
-        atoms = Atoms(atom_string, positions=positions, cell=np.eye(3)*10)
+        atoms = Atoms(atom_string, positions=positions, pbc=False)
 
         structs.append(atoms)
 
