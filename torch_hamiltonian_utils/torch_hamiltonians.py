@@ -382,21 +382,28 @@ def hamiltonian_features(centers, pairs):
                         break            
             
             keys.append(tuple(k)+(1,))
-            keys.append(tuple(k)+(-1,))            
+#             keys.append(tuple(k)+(-1,))
+            block_data = np.vstack(((b.values[idx_up] + b.values[idx_lo])/np.sqrt(2) , (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2) )) 
+            block_samples_1 = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32).copy()
+            block_samples_1[:,0]+=1
+            block_samples_2 = block_samples_1.copy()
+            block_samples_2[:,0]*=-1 
+            samples = np.vstack((block_samples_1, block_samples_2 ))
+#             print(samples)
             blocks.append(TensorBlock(
                 samples = Labels(names = b.samples.names,
-                                 values = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32) ),
+                                 values = np.asarray(samples, dtype=np.int32)),
                 components = b.components,
                 properties = b.properties,
-                values = (b.values[idx_up] + b.values[idx_lo])/np.sqrt(2)
+                values = block_data
             ))
-            blocks.append(TensorBlock(
-                samples = Labels(names = b.samples.names,
-                                 values = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32) ),
-                components = b.components,
-                properties = b.properties,
-                values = (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2)
-            ))
+#             blocks.append(TensorBlock(
+#                 samples = Labels(names = b.samples.names,
+#                                  values = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32) ),
+#                 components = b.components,
+#                 properties = b.properties,
+#                 values = (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2)
+#             ))
         elif k["species_center"] < k["species_neighbor"]:
             # off-site, different species
             keys.append(tuple(k)+(2,))
