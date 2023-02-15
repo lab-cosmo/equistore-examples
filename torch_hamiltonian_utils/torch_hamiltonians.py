@@ -189,7 +189,7 @@ def blocks_to_dense(blocks, frames, orbs):
 
     # loops over block types
     for idx, block in blocks:
-        cur_struct = 9999
+        cur_struct = 999999
         block_type, ai, ni, li, aj, nj, lj = tuple(idx)
 
         # offset of the orbital block within the pair block in the matrix
@@ -352,9 +352,11 @@ def hamiltonian_features(centers, pairs):
     for k, b in centers:
         keys.append(tuple(k)+(k["species_center"], 0,))
         samples_array = np.vstack(b.samples.tolist())
+        samples  = np.asarray(np.hstack([ samples_array, samples_array[:,-1:]]), dtype=np.int32)
+        samples[:,0]+=1
         blocks.append(TensorBlock(
             samples = Labels(names = b.samples.names + ("neighbor",),                             
-                             values = np.asarray(np.hstack([ samples_array, samples_array[:,-1:]]), dtype=np.int32) ),
+                             values = samples ),
             components = b.components,
             properties = b.properties,
             values = b.values
@@ -383,16 +385,22 @@ def hamiltonian_features(centers, pairs):
             
             keys.append(tuple(k)+(1,))
 #             keys.append(tuple(k)+(-1,))
-            block_data = np.vstack(((b.values[idx_up] + b.values[idx_lo])/np.sqrt(2) , (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2) )) 
+            pval = (b.values[idx_up] + b.values[idx_lo])/np.sqrt(2)
+            nval = (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2) 
+            #assert that pval and nval are 3D arrays (nsamples, 2 lambda+1, nfeatures) 
+            #All three dimensions must be equal for both pval and nvals. 
+            block_data = np.array(list(zip(pval, nval))).reshape(-1, pval.shape[-2], pval.shape[-1])
             block_samples_1 = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32).copy()
             block_samples_1[:,0]+=1
             block_samples_2 = block_samples_1.copy()
             block_samples_2[:,0]*=-1 
-            samples = np.vstack((block_samples_1, block_samples_2 ))
-#             print(samples)
+            intermeshed_samples = np.asarray(list(zip(block_samples_1, block_samples_2))).reshape(-1,3) #keep 3 dimensions for 
+                                                                                                        #sample names A, i,j
+            #samples = np.vstack((block_samples_1, block_samples_2 ))
+#             print(intermeshed_samples)
             blocks.append(TensorBlock(
                 samples = Labels(names = b.samples.names,
-                                 values = np.asarray(samples, dtype=np.int32)),
+                                 values = np.asarray(intermeshed_samples, dtype=np.int32)),
                 components = b.components,
                 properties = b.properties,
                 values = block_data
@@ -407,8 +415,10 @@ def hamiltonian_features(centers, pairs):
         elif k["species_center"] < k["species_neighbor"]:
             # off-site, different species
             keys.append(tuple(k)+(2,))
+            samples  = np.asarray(b.samples.asarray(), dtype= np.int32).copy()
+            samples[:,0]+=1
             blocks.append(TensorBlock(
-                samples = b.samples, 
+                samples = Labels(list(b.samples.names), samples), 
                 components = b.components,
                 properties = b.properties,
                 values = b.values.copy()
