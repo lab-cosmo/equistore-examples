@@ -24,6 +24,14 @@ def fix_pyscf_l1(dense, frame, orbs):
                 cur = (n,l)
     return dense[idx][:,idx]
 
+def lowdin_orthogonalize(fock, s):
+    """
+    lowdin orthogonalization of a fock matrix computing the square root of the overlap matrix
+    """
+    eva, eve = np.linalg.eigh(s)
+    sm12 = eve @ np.diag(1.0/np.sqrt(eva)) @ eve.T
+    return sm12 @ fock @ sm12
+
 ############ matrix/block manipulations ###############
 
 def _components_idx(l):
@@ -323,11 +331,19 @@ def hamiltonian_features(centers, pairs):
         elif k["species_center"] < k["species_neighbor"]:
             # off-site, different species
             keys.append(tuple(k)+(2,))
+            nu, sigma, L, ai, aj = k
+            ij_val = b.values
+            # access the corresponding rho_ji values to concatenate with rho_ij
+            ji_block = pairs.block(order_nu=nu, inversion_sigma=sigma,
+                              spherical_harmonics_l=L, species_center=aj, species_neighbor=ai)
+            ji_val = ji_block.values
+            val = np.dstack((ij_val, ji_val))
             blocks.append(TensorBlock(
                 samples = b.samples, 
                 components = b.components,
-                properties = b.properties,
-                values = b.values.copy()
+                properties = Labels(names=b.properties.names, 
+                                    values=np.asarray(b.properties.tolist()+ji_block.properties.tolist(), dtype=np.int32)),
+                values = val
             ))
                                 
     return TensorMap(
