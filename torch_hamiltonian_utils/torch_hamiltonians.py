@@ -6,58 +6,67 @@ import torch
 
 ###########  I/O UTILITIES ##############
 def fix_pyscf_l1(dense, frame, orbs):
-    """ pyscf stores l=1 terms in a xyz order, corresponding to (m=0, 1, -1).
-        this converts into a canonical form where m is sorted as (-1, 0,1) """
+    """pyscf stores l=1 terms in a xyz order, corresponding to (m=0, 1, -1).
+    this converts into a canonical form where m is sorted as (-1, 0,1)"""
     idx = []
     iorb = 0
     atoms = list(frame.numbers)
     for atype in atoms:
-        cur=()
+        cur = ()
         for ia, a in enumerate(orbs[atype]):
-            n,l,m = a
-            if (n,l) != cur:
+            n, l, m = a
+            if (n, l) != cur:
                 if l == 1:
-                    idx += [iorb+1, iorb+2, iorb]
+                    idx += [iorb + 1, iorb + 2, iorb]
                 else:
-                    idx += range(iorb, iorb+2*l+1)
-                iorb += 2*l+1
-                cur = (n,l)
-    return dense[idx][:,idx]
+                    idx += range(iorb, iorb + 2 * l + 1)
+                iorb += 2 * l + 1
+                cur = (n, l)
+    return dense[idx][:, idx]
+
 
 def lowdin_orthogonalize(fock, s):
     """
     lowdin orthogonalization of a fock matrix computing the square root of the overlap matrix
     """
     eva, eve = np.linalg.eigh(s)
-    sm12 = eve @ np.diag(1.0/np.sqrt(eva)) @ eve.T
+    sm12 = eve @ np.diag(1.0 / np.sqrt(eva)) @ eve.T
     return sm12 @ fock @ sm12
+
+
 ############ matrix/block manipulations ###############
 
+
 def _components_idx(l):
-    """ just a mini-utility function to get the m=-l..l indices """
-    return np.arange(-l,l+1, dtype=np.int32).reshape(2*l+1,1)
+    """just a mini-utility function to get the m=-l..l indices"""
+    return np.arange(-l, l + 1, dtype=np.int32).reshape(2 * l + 1, 1)
+
 
 def _components_idx_2d(li, lj):
-    """ indexing the entries in a 2d (l_i, l_j) block of the hamiltonian
-    in the uncoupled basis """
-    return np.array(np.meshgrid(_components_idx(li), _components_idx(lj)), dtype = np.int32).T.reshape(-1,2)
+    """indexing the entries in a 2d (l_i, l_j) block of the hamiltonian
+    in the uncoupled basis"""
+    return np.array(
+        np.meshgrid(_components_idx(li), _components_idx(lj)), dtype=np.int32
+    ).T.reshape(-1, 2)
+
 
 def _orbs_offsets(orbs):
-    """ offsets for the orbital subblocks within an atom block of the Hamiltonian matrix """
+    """offsets for the orbital subblocks within an atom block of the Hamiltonian matrix"""
     orbs_tot = {}
     orbs_offset = {}
     for k in orbs:
         ko = 0
-        for n,l,m in orbs[k]:
+        for n, l, m in orbs[k]:
             if m != -l:
                 continue
-            orbs_offset[(k,n,l)] = ko
-            ko+=2*l+1
+            orbs_offset[(k, n, l)] = ko
+            ko += 2 * l + 1
         orbs_tot[k] = ko
     return orbs_tot, orbs_offset
 
+
 def _atom_blocks_idx(frames, orbs_tot):
-    """ position of the hamiltonian subblocks for each atom in each frame """
+    """position of the hamiltonian subblocks for each atom in each frame"""
     atom_blocks_idx = {}
     for A, f in enumerate(frames):
         ki = 0
@@ -69,26 +78,32 @@ def _atom_blocks_idx(frames, orbs_tot):
             ki += orbs_tot[ai]
     return atom_blocks_idx
 
+
 def dense_to_blocks(dense, frames, orbs):
     """
-    Starts structure index of the samples at 1 (and NOT 0) 
+    Starts structure index of the samples at 1 (and NOT 0)
     Converts a list of dense matrices `dense` corresponding to the single-particle Hamiltonians for the structures
     described by `frames`, and using the orbitals described in the dictionary `orbs` into a TensorMap storage format.
 
-    The label convention is as follows: 
+    The label convention is as follows:
 
     The keys that label the blocks are ["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"].
     block_type: 0 -> diagonal blocks, atom i=j
                 2 -> different species block, stores only when n_i,l_i and n_j,l_j are lexicographically sorted
-                1 -> same specie, off-diagonal. store symmetric (1) and anti-symmetric (-1) term as samples with 
+                1 -> same specie, off-diagonal. store symmetric (1) and anti-symmetric (-1) term as samples with
                 A (>0) to represent + and A(<0) to represent - for the same i,j
-    
+
     a_{i,j}: chemical species (atomic number) of the two atoms
     n_{i,j}: radial channel
     l_{i,j}: angular momentum
     """
 
-    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "center", "neighbor"], [["m1"], ["m2"]], ["value"])
+    block_builder = TensorBuilder(
+        ["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"],
+        ["structure", "center", "neighbor"],
+        [["m1"], ["m2"]],
+        ["value"],
+    )
     orbs_tot, _ = _orbs_offsets(orbs)
     for A in range(len(frames)):
         frame = frames[A]
@@ -97,94 +112,134 @@ def dense_to_blocks(dense, frames, orbs):
         for i, ai in enumerate(frame.numbers):
             kj_base = 0
             for j, aj in enumerate(frame.numbers):
-                if i==j:
+                if i == j:
                     block_type = 0  # diagonal
-                elif ai==aj:
+                elif ai == aj:
                     block_type = 1  # same-species
-                    if i>j:
-                        kj_base+=orbs_tot[aj]
+                    if i > j:
+                        kj_base += orbs_tot[aj]
                         continue
                 else:
                     block_type = 2  # different species
-                    if ai>aj: # only sorted element types
+                    if ai > aj:  # only sorted element types
                         kj_base += orbs_tot[aj]
                         continue
-                block_data = torch.from_numpy(ham[ki_base:ki_base+orbs_tot[ai], kj_base:kj_base+orbs_tot[aj]])
-                
+                block_data = torch.from_numpy(
+                    ham[
+                        ki_base : ki_base + orbs_tot[ai],
+                        kj_base : kj_base + orbs_tot[aj],
+                    ]
+                )
+
                 if block_type == 1:
-                    block_data_plus = (block_data + block_data.T) *1/np.sqrt(2)
-                    block_data_minus = (block_data - block_data.T) *1/np.sqrt(2)
+                    block_data_plus = (block_data + block_data.T) * 1 / np.sqrt(2)
+                    block_data_minus = (block_data - block_data.T) * 1 / np.sqrt(2)
                 ki_offset = 0
                 for ni, li, mi in orbs[ai]:
-                    if mi != -li: # picks the beginning of each (n,l) block and skips the other orbitals
+                    if (
+                        mi != -li
+                    ):  # picks the beginning of each (n,l) block and skips the other orbitals
                         continue
                     kj_offset = 0
                     for nj, lj, mj in orbs[aj]:
-                        if mj != -lj: # picks the beginning of each (n,l) block and skips the other orbitals
-                            continue                    
-                        if (ai==aj and (ni>nj or (ni==nj and li>lj))): 
-                            kj_offset += 2*lj+1
+                        if (
+                            mj != -lj
+                        ):  # picks the beginning of each (n,l) block and skips the other orbitals
+                            continue
+                        if ai == aj and (ni > nj or (ni == nj and li > lj)):
+                            kj_offset += 2 * lj + 1
                             continue
                         block_idx = (block_type, ai, ni, li, aj, nj, lj)
                         if block_idx not in block_builder.blocks:
-                           
-                            if block_type %2 ==0:
-                                block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32),
-                                            components=[_components_idx(li), _components_idx(lj)] )
-                           
-                            
+
+                            if block_type % 2 == 0:
+                                block = block_builder.add_block(
+                                    keys=block_idx,
+                                    properties=np.asarray([[0]], dtype=np.int32),
+                                    components=[
+                                        _components_idx(li),
+                                        _components_idx(lj),
+                                    ],
+                                )
+
                             else:
                                 assert block_type == 1
-                                block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32),
-                                            components=[_components_idx(li), _components_idx(lj)] ) 
-
+                                block = block_builder.add_block(
+                                    keys=block_idx,
+                                    properties=np.asarray([[0]], dtype=np.int32),
+                                    components=[
+                                        _components_idx(li),
+                                        _components_idx(lj),
+                                    ],
+                                )
 
                         else:
                             block = block_builder.blocks[block_idx]
-                        
-                        islice = slice(ki_offset,ki_offset+2*li+1)
-                        jslice = slice(kj_offset,kj_offset+2*lj+1)
-                        
-                        if block_type == 1:
-#                             bdata = torch.stack([block_data_plus, block_data_minus]).swapaxes(0,-1)
-#                             print(bdata.shape, li, lj,block_data_plus.shape )
-#                             print(block_data.shape, block_data_plus[islice, jslice].shape, block_data[:2,islice, jslice].shape)
-                            block.add_samples(labels=[(A+1,i,j)],data=block_data_plus[islice, jslice].reshape((1,(2*li+1),(2*lj+1),1)) )
-                            if len(torch.where(block_data_minus)[0]):
-                                block.add_samples(labels=[(-A-1,i,j)],data=block_data_minus[islice, jslice].reshape((1,(2*li+1),(2*lj+1),1)) )
-                            
-                        else:
-                
-#                             print(block_data.shape)
-                            block.add_samples(labels=[(A+1,i,j)], data=block_data[islice, jslice].reshape((1,2*li+1,2*lj+1,1)) )
-                           
-                        
-                        kj_offset += 2*lj+1
-                    ki_offset += 2*li+1
-                kj_base+=orbs_tot[aj]
 
-            ki_base+=orbs_tot[ai]
+                        islice = slice(ki_offset, ki_offset + 2 * li + 1)
+                        jslice = slice(kj_offset, kj_offset + 2 * lj + 1)
+
+                        if block_type == 1:
+                            #                             bdata = torch.stack([block_data_plus, block_data_minus]).swapaxes(0,-1)
+                            #                             print(bdata.shape, li, lj,block_data_plus.shape )
+                            #                             print(block_data.shape, block_data_plus[islice, jslice].shape, block_data[:2,islice, jslice].shape)
+                            block.add_samples(
+                                labels=[(A + 1, i, j)],
+                                data=block_data_plus[islice, jslice].reshape(
+                                    (1, (2 * li + 1), (2 * lj + 1), 1)
+                                ),
+                            )
+                            if len(torch.where(block_data_minus)[0]):
+                                block.add_samples(
+                                    labels=[(-A - 1, i, j)],
+                                    data=block_data_minus[islice, jslice].reshape(
+                                        (1, (2 * li + 1), (2 * lj + 1), 1)
+                                    ),
+                                )
+
+                        else:
+
+                            #                             print(block_data.shape)
+                            block.add_samples(
+                                labels=[(A + 1, i, j)],
+                                data=block_data[islice, jslice].reshape(
+                                    (1, 2 * li + 1, 2 * lj + 1, 1)
+                                ),
+                            )
+
+                        kj_offset += 2 * lj + 1
+                    ki_offset += 2 * li + 1
+                kj_base += orbs_tot[aj]
+
+            ki_base += orbs_tot[ai]
     return block_builder.build()
 
 
-def blocks_to_dense(blocks, frames, orbs):
+def blocks_to_dense(blocks, frames, orbs, vectorized=True):
+    if vectorized:
+        return _vectorized_blocks_to_dense(blocks, frames, orbs)
+    else:
+        return _blocks_to_dense(blocks, frames, orbs)
+
+
+def _blocks_to_dense(blocks, frames, orbs):
     """
     Converts a TensorMap containing matrix blocks in the uncoupled basis, `blocks` into dense matrices.
     Needs `frames` and `orbs` to reconstruct matrices in the correct order. See `dense_to_blocks` to understant
     the different types of blocks.
     """
 
-    orbs_tot, orbs_offset =  _orbs_offsets(orbs)
-    
+    orbs_tot, orbs_offset = _orbs_offsets(orbs)
+
     atom_blocks_idx = _atom_blocks_idx(frames, orbs_tot)
-    
+
     # init storage for the dense hamiltonians
-    dense = []        
+    dense = []
     for f in frames:
         norbs = 0
         for ai in f.numbers:
             norbs += orbs_tot[ai]
-        ham = torch.zeros(norbs, norbs)#, dtype=np.float64)
+        ham = torch.zeros(norbs, norbs)  # , dtype=np.float64)
         dense.append(ham)
 
     # loops over block types
@@ -193,238 +248,521 @@ def blocks_to_dense(blocks, frames, orbs):
         block_type, ai, ni, li, aj, nj, lj = tuple(idx)
 
         # offset of the orbital block within the pair block in the matrix
-        ki_offset = orbs_offset[(ai,ni,li)]
-        kj_offset = orbs_offset[(aj,nj,lj)]
-        
+        ki_offset = orbs_offset[(ai, ni, li)]
+        kj_offset = orbs_offset[(aj, nj, lj)]
+
         # loops over samples (structure, i, j)
-        
-        for (A,i,j), block_data in zip(block.samples, block.values): 
-            if A<0:
-                    continue 
+
+        for (A, i, j), block_data in zip(block.samples, block.values):
+            if A < 0:
+                continue
             if A != cur_struct:
                 cur_struct = A - 1
                 ham = dense[cur_struct]
             # coordinates of the atom block in the matrix
-            ki_base, kj_base = atom_blocks_idx[(cur_struct ,i,j)]
-            islice = slice(ki_base+ki_offset, ki_base+ki_offset+2*li+1)
-            jslice = slice(kj_base+kj_offset, kj_base+kj_offset+2*lj+1)
+            ki_base, kj_base = atom_blocks_idx[(cur_struct, i, j)]
+            islice = slice(ki_base + ki_offset, ki_base + ki_offset + 2 * li + 1)
+            jslice = slice(kj_base + kj_offset, kj_base + kj_offset + 2 * lj + 1)
 
             # print(i, ni, li, ki_base, ki_offset)
             if block_type == 0:
-                ham[islice, jslice] = block_data[:,:,0].reshape(2*li+1,2*lj+1)
+                ham[islice, jslice] = block_data[:, :, 0].reshape(
+                    2 * li + 1, 2 * lj + 1
+                )
                 if ki_offset != kj_offset:
-                    ham[jslice, islice] = block_data[:,:,0].reshape(2*li+1,2*lj+1).T
+                    ham[jslice, islice] = (
+                        block_data[:, :, 0].reshape(2 * li + 1, 2 * lj + 1).T
+                    )
             elif block_type == 2:
-                ham[islice, jslice] = block_data[:,:,0].reshape(2*li+1,2*lj+1)
-                ham[jslice, islice] = block_data[:,:,0].reshape(2*li+1,2*lj+1).T   
-                
+                ham[islice, jslice] = block_data[:, :, 0].reshape(
+                    2 * li + 1, 2 * lj + 1
+                )
+                ham[jslice, islice] = (
+                    block_data[:, :, 0].reshape(2 * li + 1, 2 * lj + 1).T
+                )
+
             elif block_type == 1:
-                block_data_plus = block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2)
-                block_idx_minus = np.where(np.logical_and(np.logical_and(block.samples["structure"]==-A,  block.samples["center"]==i), block.samples["neighbor"]==j))
-#                 print(idx, block_idx_minus, block.values[block_idx_minus].shape, li, lj)
-#                 print(block.samples[block_idx_minus], A, i, j)
+                block_data_plus = block_data[:, :, 0].reshape(
+                    2 * li + 1, 2 * lj + 1
+                ) / np.sqrt(2)
+                block_idx_minus = np.where(
+                    np.logical_and(
+                        np.logical_and(
+                            block.samples["structure"] == -A,
+                            block.samples["center"] == i,
+                        ),
+                        block.samples["neighbor"] == j,
+                    )
+                )
+                #                 print(idx, block_idx_minus, block.values[block_idx_minus].shape, li, lj)
+                #                 print(block.samples[block_idx_minus], A, i, j)
                 if block_idx_minus[0]:
                     print(block_idx_minus)
-                    assert block.values[block_idx_minus][0,:,:,0].shape == block_data[:,:,0].shape
-                    block_data_minus = block.values[block_idx_minus][0,:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2)
-                else: 
+                    assert (
+                        block.values[block_idx_minus][0, :, :, 0].shape
+                        == block_data[:, :, 0].shape
+                    )
+                    block_data_minus = block.values[block_idx_minus][
+                        0, :, :, 0
+                    ].reshape(2 * li + 1, 2 * lj + 1) / np.sqrt(2)
+                else:
                     block_data_minus = torch.zeros_like(block_data_plus)
-#                 block_data_plus = block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2)
-#                 print(cur_struct , block_data.shape)
-                ham[islice, jslice] +=  block_data_plus
-                ham[jslice, islice] +=  block_data_plus.T
+                #                 block_data_plus = block_data[:,:,0].reshape(2*li+1,2*lj+1)  / np.sqrt(2)
+                #                 print(cur_struct , block_data.shape)
+                ham[islice, jslice] += block_data_plus
+                ham[jslice, islice] += block_data_plus.T
                 ham[islice, jslice] += block_data_minus
                 ham[jslice, islice] += block_data_minus.T
                 if ki_offset != kj_offset:
-                    islice = slice(ki_base+kj_offset, ki_base+kj_offset+2*lj+1)
-                    jslice = slice(kj_base+ki_offset, kj_base+ki_offset+2*li+1)
-                    
+                    islice = slice(
+                        ki_base + kj_offset, ki_base + kj_offset + 2 * lj + 1
+                    )
+                    jslice = slice(
+                        kj_base + ki_offset, kj_base + ki_offset + 2 * li + 1
+                    )
+
                     ham[islice, jslice] += block_data_plus.T
                     ham[jslice, islice] += block_data_plus
-                    
-                    ham[islice, jslice] -= block_data_minus .T
+
+                    ham[islice, jslice] -= block_data_minus.T
                     ham[jslice, islice] -= block_data_minus
-                
-                    
+
     return dense
+
+
+def _vectorized_blocks_to_dense(blocks, frames, orbs):
+    # total number of orbitals per atom, orbital offset per atom
+    orbs_tot, orbs_offset = _orbs_offsets(orbs)
+
+    # indices of the block for each atom
+    atom_blocks_idx = _atom_blocks_idx(frames, orbs_tot)
+
+    # init storage for the dense hamiltonians
+    # note: this vectorized function relies on storing `dense`
+    #     as a torch tensor, i.e., all frames correspond to a
+    #     single molecule. we can then use the first frame to
+    #     set the size of the dense hamiltonians
+    norbs = sum(orbs_tot[ai] for ai in frames[0].numbers)
+    device = blocks.block(0).values.device
+    dense = torch.zeros((len(frames), norbs, norbs), device=device)
+
+    # instantiating the slices of each block in order to assign
+    # the values to the dense matrices is the slow part of this function
+    # here we use a simple caching mechanism to avoid computing the same
+    # slice if we have already computed it previously
+    SLICES_CACHE = {}
+
+    # loops over block types
+    for idx, block in blocks:
+        # I can't loop over the frames directly, so I'll keep track
+        # of the frame with these two variables
+        dense_idx = -1
+        cur_A = -1
+
+        block_type, ai, ni, li, aj, nj, lj = tuple(idx)
+
+        # offset of the orbital block within the pair block in the matrix
+        ki_offset = orbs_offset[(ai, ni, li)]
+        kj_offset = orbs_offset[(aj, nj, lj)]
+        same_koff = ki_offset == kj_offset
+
+        # get the slices of the dense hamiltonian in order to assign
+        # the values from the tensormap
+        # this is the computationally expensive part of the function
+        # we use caching to speed up the process a bit
+        fslices, islices, jslices, islices2, jslices2 = _get_slices(
+            block=block,
+            cur_A=cur_A,
+            dense_idx=dense_idx,
+            atom_blocks_idx=atom_blocks_idx,
+            ki_offset=ki_offset,
+            kj_offset=kj_offset,
+            li=li,
+            lj=lj,
+            idx=idx,
+            slices_cache=SLICES_CACHE,
+        )
+
+        if block_type == 0:
+            values = torch.transpose(block.values, 1, 2).reshape(-1)
+            dense[fslices, islices, jslices] = values
+            if not same_koff:
+                dense[fslices, jslices, islices] = values
+
+        elif block_type == 2:
+            values = torch.transpose(block.values, 1, 2).reshape(-1)
+            dense[fslices, islices, jslices] = values
+            dense[fslices, jslices, islices] = values
+
+        elif block_type == 1:
+            values = torch.transpose(block.values, 1, 2).reshape(-1) / (2**0.5)
+            valuesT = block.values.reshape(-1) / (2**0.5)
+            dense[fslices, islices, jslices] += values
+            dense[fslices, jslices, islices] += values
+            if not same_koff:
+                dense[fslices, islices2, jslices2] += valuesT
+                dense[fslices, jslices2, islices2] += valuesT
+
+        elif block_type == -1:
+            values = torch.transpose(block.values, 1, 2).reshape(-1) / (2**0.5)
+            valuesT = block.values.reshape(-1) / (2**0.5)
+            dense[fslices, islices, jslices] += values
+            dense[fslices, jslices, islices] += values
+            if not same_koff:
+                dense[fslices, islices2, jslices2] -= valuesT
+                dense[fslices, jslices2, islices2] -= valuesT
+
+    return dense
+
+
+def _get_slices(
+    block,
+    cur_A,
+    dense_idx,
+    atom_blocks_idx,
+    ki_offset,
+    kj_offset,
+    li,
+    lj,
+    idx,
+    slices_cache,
+):
+    islices = []
+    jslices = []
+    fslices = []
+    islices2 = []
+    jslices2 = []
+    # loops over samples (structure, i, j)
+    for A, i, j in block.samples:
+        # check if we have to update the frame and index
+        if A != cur_A:
+            cur_A = A
+            dense_idx += 1
+
+        # coordinates of the atom block in the matrix
+        ki_base, kj_base = atom_blocks_idx[(dense_idx, i, j)]
+
+        fslice, islice, jslice, islice2, jslice2 = _get_slices_cached(
+            ki_base=ki_base,
+            kj_base=kj_base,
+            ki_offset=ki_offset,
+            kj_offset=kj_offset,
+            li=li,
+            lj=lj,
+            dense_idx=dense_idx,
+            block_idx=idx,
+            slices_cache=slices_cache,
+        )
+
+        islices.append(islice)
+        jslices.append(jslice)
+        fslices.append(fslice)
+        islices2.append(islice2)
+        jslices2.append(jslice2)
+
+    fslices = np.concatenate(fslices)
+    islices = np.concatenate(islices)
+    islices2 = np.concatenate(islices2)
+    jslices = np.concatenate(jslices)
+    jslices2 = np.concatenate(jslices2)
+
+    return fslices, islices, jslices, islices2, jslices2
+
+
+def _get_slices_cached(
+    ki_base,
+    kj_base,
+    ki_offset,
+    kj_offset,
+    li,
+    lj,
+    dense_idx,
+    block_idx,
+    slices_cache,
+):
+    key = (ki_base, kj_base, ki_offset, kj_offset, li, lj, block_idx)
+    # try to get the cached slices
+    slices = slices_cache.get(key, None)
+
+    # if slices are not cached, compute them
+    if slices is None:
+        islice = np.arange(ki_base + ki_offset, ki_base + ki_offset + 2 * li + 1)
+        islice = np.tile(islice, 2 * lj + 1)
+
+        jslice = np.arange(
+            kj_base + kj_offset, kj_base + kj_offset + 2 * lj + 1
+        ).repeat(2 * li + 1)
+
+        fslice = np.array([dense_idx]).repeat((2 * li + 1) * (2 * lj + 1))
+
+        islice2 = np.arange(ki_base + kj_offset, ki_base + kj_offset + 2 * lj + 1)
+        islice2 = np.tile(islice2, 2 * li + 1)
+
+        jslice2 = np.arange(
+            kj_base + ki_offset, kj_base + ki_offset + 2 * li + 1
+        ).repeat(2 * lj + 1)
+
+        # cache the slices
+        slices_cache[key] = (islice, jslice, islice2, jslice2)
+
+    # use the cached slices
+    else:
+        islice, jslice, islice2, jslice2 = slices
+        fslice = np.array([dense_idx]).repeat((2 * li + 1) * (2 * lj + 1))
+
+    return fslice, islice, jslice, islice2, jslice2
 
 
 def couple_blocks(blocks, cg=None):
     if cg is None:
-        lmax = max(blocks.keys["li"]+blocks.keys["lj"])
+        lmax = max(blocks.keys["li"] + blocks.keys["lj"])
         cg = ClebschGordanReal(lmax)
 
-    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j", "L"], ["structure", "center", "neighbor"], [["M"]], ["value"])
+    block_builder = TensorBuilder(
+        ["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j", "L"],
+        ["structure", "center", "neighbor"],
+        [["M"]],
+        ["value"],
+    )
     for idx, block in blocks:
         block_type, ai, ni, li, aj, nj, lj = tuple(idx)
-        decoupled = torch.moveaxis(block.values,-1,-2).reshape((len(block.samples), len(block.properties), 2*li+1, 2*lj+1))
-        coupled = cg.couple(decoupled)[(li,lj)]
+        decoupled = torch.moveaxis(block.values, -1, -2).reshape(
+            (len(block.samples), len(block.properties), 2 * li + 1, 2 * lj + 1)
+        )
+        coupled = cg.couple(decoupled)[(li, lj)]
         for L in coupled:
             bsamples = list(np.array(block.samples.asarray(), dtype=int))
             samples_keep = list(range(len(bsamples)))
             block_idx = tuple(idx) + (L,)
             # skip blocks that are zero because of symmetry
-            if ai==aj and ni==nj and li==lj:
-                parity = (-1)**(li+lj+L)
-                if (parity == -1 and block_type ==0):
+            if ai == aj and ni == nj and li == lj:
+                parity = (-1) ** (li + lj + L)
+                if parity == -1 and block_type == 0:
                     continue
                 elif block_type == 1:
-                    if parity==-1:
-                        #remove samples with A>0 
-                        sample_idx=np.where(block.samples["structure"]>0)[0]
+                    if parity == -1:
+                        # remove samples with A>0
+                        sample_idx = np.where(block.samples["structure"] > 0)[0]
                         for i in sorted(sample_idx, reverse=True):
                             bsamples.pop(i)
                             samples_keep.pop(i)
 
                     else:
-                        #parity =1 and remove samples with A<0
-                        sample_idx=np.where(block.samples["structure"]<0)[0]
+                        # parity =1 and remove samples with A<0
+                        sample_idx = np.where(block.samples["structure"] < 0)[0]
                         for i in sorted(sample_idx, reverse=True):
                             bsamples.pop(i)
                             samples_keep.pop(i)
-                        
-            new_block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
-                            components=[_components_idx(L).reshape(-1,1)] )
-                
-            new_block.add_samples(labels=np.asarray(bsamples,dtype=np.int32).reshape(len(bsamples),-1), 
-                            data=torch.moveaxis(coupled[L][samples_keep], -1, -2 ) )
+
+            new_block = block_builder.add_block(
+                keys=block_idx,
+                properties=np.asarray([[0]], dtype=np.int32),
+                components=[_components_idx(L).reshape(-1, 1)],
+            )
+
+            new_block.add_samples(
+                labels=np.asarray(bsamples, dtype=np.int32).reshape(len(bsamples), -1),
+                data=torch.moveaxis(coupled[L][samples_keep], -1, -2),
+            )
 
     return block_builder.build()
 
+
 def decouple_blocks(blocks, cg=None):
-    #append and add to samples carefully  in coupled[L] - otherwise decoupled will screw up 
+    # append and add to samples carefully  in coupled[L] - otherwise decoupled will screw up
     if cg is None:
         lmax = max(blocks.keys["L"])
         cg = ClebschGordanReal(lmax)
-    block_builder = TensorBuilder(["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"], ["structure", "center", "neighbor"], [["m1"], ["m2"]], ["value"])
-   
+    block_builder = TensorBuilder(
+        ["block_type", "a_i", "n_i", "l_i", "a_j", "n_j", "l_j"],
+        ["structure", "center", "neighbor"],
+        [["m1"], ["m2"]],
+        ["value"],
+    )
+
     for idx, block in blocks:
         block_type, ai, ni, li, aj, nj, lj, L = tuple(idx)
         block_idx = (block_type, ai, ni, li, aj, nj, lj)
         bsamples = block.samples
-        
-        if block_type==1 and ni==nj and li==lj and len(range(np.abs(li-lj), li+lj+1))>1: 
-            s1 = blocks.block(blocks.keys.position(block_idx+(np.abs(li-lj),))).samples 
+
+        if (
+            block_type == 1
+            and ni == nj
+            and li == lj
+            and len(range(np.abs(li - lj), li + lj + 1)) > 1
+        ):
+            s1 = blocks.block(
+                blocks.keys.position(block_idx + (np.abs(li - lj),))
+            ).samples
             s2 = s1.copy()
-            s2["structure"]=s2["structure"]*(-1)
-            if s1["structure"][0]>0 :
+            s2["structure"] = s2["structure"] * (-1)
+            if s1["structure"][0] > 0:
                 even_sample = s1
                 odd_sample = s2
-            else: 
+            else:
                 even_sample = s2
                 odd_sample = s1
-            bsamples = np.zeros((2*len(s1),), dtype = s1.dtype)
+            bsamples = np.zeros((2 * len(s1),), dtype=s1.dtype)
             bsamples[0::2] = even_sample
             bsamples[1::2] = odd_sample
-            
+
         if block_idx in block_builder.blocks:
-            continue        
+            continue
         coupled = {}
-        for L in range(np.abs(li-lj), li+lj+1):
-            bidx = blocks.keys.position(block_idx+(L,))
+        for L in range(np.abs(li - lj), li + lj + 1):
+            bidx = blocks.keys.position(block_idx + (L,))
             if bidx is not None:
                 coupled[L] = torch.moveaxis(blocks.block(bidx).values, -1, -2)
-                if block_type==1 and ni==nj and li==lj and len(range(np.abs(li-lj), li+lj+1))>1: 
-                    coupled[L] = torch.zeros(len(bsamples), 1, 2*L+1)
-                    if blocks.block(bidx).samples["structure"][0]>0:
-                        print(idx, coupled[L].shape, torch.moveaxis(blocks.block(bidx).values, -1, -2).shape, bsamples.shape)
-                        coupled[L][0::2] =  torch.moveaxis(blocks.block(bidx).values, -1, -2)
-                    else: 
-                        coupled[L][1::2] =  torch.moveaxis(blocks.block(bidx).values, -1, -2)
+                if (
+                    block_type == 1
+                    and ni == nj
+                    and li == lj
+                    and len(range(np.abs(li - lj), li + lj + 1)) > 1
+                ):
+                    coupled[L] = torch.zeros(len(bsamples), 1, 2 * L + 1)
+                    if blocks.block(bidx).samples["structure"][0] > 0:
+                        print(
+                            idx,
+                            coupled[L].shape,
+                            torch.moveaxis(blocks.block(bidx).values, -1, -2).shape,
+                            bsamples.shape,
+                        )
+                        coupled[L][0::2] = torch.moveaxis(
+                            blocks.block(bidx).values, -1, -2
+                        )
+                    else:
+                        coupled[L][1::2] = torch.moveaxis(
+                            blocks.block(bidx).values, -1, -2
+                        )
 
+        decoupled = cg.decouple({(li, lj): coupled})
 
-        decoupled = cg.decouple({(li,lj):coupled})
-        
-        new_block = block_builder.add_block(keys=block_idx, properties=np.asarray([[0]], dtype=np.int32), 
-                            components=[_components_idx(li), _components_idx(lj)] )
-        new_block.add_samples(labels=bsamples.view(dtype=np.int32).reshape(bsamples.shape[0],-1),
-                            data=torch.moveaxis(decoupled, 1, -1))
-    return block_builder.build()    
-  
+        new_block = block_builder.add_block(
+            keys=block_idx,
+            properties=np.asarray([[0]], dtype=np.int32),
+            components=[_components_idx(li), _components_idx(lj)],
+        )
+        new_block.add_samples(
+            labels=bsamples.view(dtype=np.int32).reshape(bsamples.shape[0], -1),
+            data=torch.moveaxis(decoupled, 1, -1),
+        )
+    return block_builder.build()
+
 
 def hamiltonian_features(centers, pairs):
-    """ Builds Hermitian, HAM-learning adapted features starting 
-    from generic center |rho_i^nu> and pair |rho_ij^nu> features. 
-    The sample and property labels must match. """
+    """Builds Hermitian, HAM-learning adapted features starting
+    from generic center |rho_i^nu> and pair |rho_ij^nu> features.
+    The sample and property labels must match."""
     keys = []
     blocks = []
     # central blocks
     for k, b in centers:
-        keys.append(tuple(k)+(k["species_center"], 0,))
+        keys.append(
+            tuple(k)
+            + (
+                k["species_center"],
+                0,
+            )
+        )
         samples_array = np.vstack(b.samples.tolist())
-        samples  = np.asarray(np.hstack([ samples_array, samples_array[:,-1:]]), dtype=np.int32)
-        samples[:,0]+=1
-        blocks.append(TensorBlock(
-            samples = Labels(names = b.samples.names + ("neighbor",),                             
-                             values = samples ),
-            components = b.components,
-            properties = b.properties,
-            values = b.values
-        ))
-            
-    for k, b in pairs:                        
+        samples = np.asarray(
+            np.hstack([samples_array, samples_array[:, -1:]]), dtype=np.int32
+        )
+        samples[:, 0] += 1
+        blocks.append(
+            TensorBlock(
+                samples=Labels(names=b.samples.names + ("neighbor",), values=samples),
+                components=b.components,
+                properties=b.properties,
+                values=b.values,
+            )
+        )
+
+    for k, b in pairs:
         if k["species_center"] == k["species_neighbor"]:
             # off-site, same species
-            idx_up = np.where(b.samples["center"]<b.samples["neighbor"])[0]
-            if len(idx_up) ==0:
+            idx_up = np.where(b.samples["center"] < b.samples["neighbor"])[0]
+            if len(idx_up) == 0:
                 continue
-            idx_lo = np.where(b.samples["center"]>b.samples["neighbor"])[0]
-            
-            # we need to find the "ji" position that matches each "ij" sample. 
+            idx_lo = np.where(b.samples["center"] > b.samples["neighbor"])[0]
+
+            # we need to find the "ji" position that matches each "ij" sample.
             # we exploit the fact that the samples are sorted by structure to do a "local" rearrangement
             smp_up, smp_lo = 0, 0
             for smp_up in range(len(idx_up)):
                 ij = b.samples[idx_up[smp_up]][["center", "neighbor"]]
                 for smp_lo in range(smp_up, len(idx_lo)):
-                    ij_lo = b.samples[idx_lo[smp_lo]][["neighbor", "center"]]                    
-                    if b.samples[idx_up[smp_up]]["structure"] != b.samples[idx_lo[smp_lo]]["structure"]:
-                        raise ValueError(f"Could not find matching ji term for sample {b.samples[idx_up[smp_up]]}") 
+                    ij_lo = b.samples[idx_lo[smp_lo]][["neighbor", "center"]]
+                    if (
+                        b.samples[idx_up[smp_up]]["structure"]
+                        != b.samples[idx_lo[smp_lo]]["structure"]
+                    ):
+                        raise ValueError(
+                            f"Could not find matching ji term for sample {b.samples[idx_up[smp_up]]}"
+                        )
                     if tuple(ij) == tuple(ij_lo):
-                        idx_lo[smp_up], idx_lo[smp_lo] = idx_lo[smp_lo], idx_lo[smp_up]                        
-                        break            
-            
-            keys.append(tuple(k)+(1,))
-#             keys.append(tuple(k)+(-1,))
-            pval = (b.values[idx_up] + b.values[idx_lo])/np.sqrt(2)
-            nval = (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2) 
-            #assert that pval and nval are 3D arrays (nsamples, 2 lambda+1, nfeatures) 
-            #All three dimensions must be equal for both pval and nvals. 
-            block_data = np.array(list(zip(pval, nval))).reshape(-1, pval.shape[-2], pval.shape[-1])
-            block_samples_1 = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32).copy()
-            block_samples_1[:,0]+=1
+                        idx_lo[smp_up], idx_lo[smp_lo] = idx_lo[smp_lo], idx_lo[smp_up]
+                        break
+
+            keys.append(tuple(k) + (1,))
+            #             keys.append(tuple(k)+(-1,))
+            pval = (b.values[idx_up] + b.values[idx_lo]) / np.sqrt(2)
+            nval = (b.values[idx_up] - b.values[idx_lo]) / np.sqrt(2)
+            # assert that pval and nval are 3D arrays (nsamples, 2 lambda+1, nfeatures)
+            # All three dimensions must be equal for both pval and nvals.
+            block_data = np.array(list(zip(pval, nval))).reshape(
+                -1, pval.shape[-2], pval.shape[-1]
+            )
+            block_samples_1 = np.asarray(
+                b.samples[idx_up].tolist(), dtype=np.int32
+            ).copy()
+            block_samples_1[:, 0] += 1
             block_samples_2 = block_samples_1.copy()
-            block_samples_2[:,0]*=-1 
-            intermeshed_samples = np.asarray(list(zip(block_samples_1, block_samples_2))).reshape(-1,3) #keep 3 dimensions for 
-                                                                                                        #sample names A, i,j
-            #samples = np.vstack((block_samples_1, block_samples_2 ))
-#             print(intermeshed_samples)
-            blocks.append(TensorBlock(
-                samples = Labels(names = b.samples.names,
-                                 values = np.asarray(intermeshed_samples, dtype=np.int32)),
-                components = b.components,
-                properties = b.properties,
-                values = block_data
-            ))
-#             blocks.append(TensorBlock(
-#                 samples = Labels(names = b.samples.names,
-#                                  values = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32) ),
-#                 components = b.components,
-#                 properties = b.properties,
-#                 values = (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2)
-#             ))
+            block_samples_2[:, 0] *= -1
+            intermeshed_samples = np.asarray(
+                list(zip(block_samples_1, block_samples_2))
+            ).reshape(
+                -1, 3
+            )  # keep 3 dimensions for
+            # sample names A, i,j
+            # samples = np.vstack((block_samples_1, block_samples_2 ))
+            #             print(intermeshed_samples)
+            blocks.append(
+                TensorBlock(
+                    samples=Labels(
+                        names=b.samples.names,
+                        values=np.asarray(intermeshed_samples, dtype=np.int32),
+                    ),
+                    components=b.components,
+                    properties=b.properties,
+                    values=block_data,
+                )
+            )
+        #             blocks.append(TensorBlock(
+        #                 samples = Labels(names = b.samples.names,
+        #                                  values = np.asarray(b.samples[idx_up].tolist(), dtype=np.int32) ),
+        #                 components = b.components,
+        #                 properties = b.properties,
+        #                 values = (b.values[idx_up] - b.values[idx_lo])/np.sqrt(2)
+        #             ))
         elif k["species_center"] < k["species_neighbor"]:
             # off-site, different species
-            keys.append(tuple(k)+(2,))
-            samples  = np.asarray(b.samples.asarray(), dtype= np.int32).copy()
-            samples[:,0]+=1
-            blocks.append(TensorBlock(
-                samples = Labels(list(b.samples.names), samples), 
-                components = b.components,
-                properties = b.properties,
-                values = b.values.copy()
-            ))
-                                
+            keys.append(tuple(k) + (2,))
+            samples = np.asarray(b.samples.asarray(), dtype=np.int32).copy()
+            samples[:, 0] += 1
+            blocks.append(
+                TensorBlock(
+                    samples=Labels(list(b.samples.names), samples),
+                    components=b.components,
+                    properties=b.properties,
+                    values=b.values.copy(),
+                )
+            )
+
     return TensorMap(
-        keys = Labels(names=pairs.keys.names + ("block_type",), values =np.asarray(keys, dtype=np.int32)),
-        blocks = blocks
+        keys=Labels(
+            names=pairs.keys.names + ("block_type",),
+            values=np.asarray(keys, dtype=np.int32),
+        ),
+        blocks=blocks,
     )
