@@ -40,7 +40,8 @@ def acdc_standardize_keys(descriptor, drop_pair_id=True):
         sample_names = [ "center" if b == "first_atom" else ("neighbor" if b == "second_atom" else b) for b in block.samples.names ]
         # converts pair_id to shifted neighbor numbers
         if "pair_id" in sample_names and drop_pair_id:
-            new_samples = block.samples.view(dtype = np.int32).copy().reshape(-1,len(sample_names))
+            new_samples = block.samples.view(dtype = np.int32
+                                    ).copy().reshape(-1,len(sample_names))
             icent = np.where(np.asarray(sample_names)=="center")[0]
             ineigh = np.where(np.asarray(sample_names)=="neighbor")[0]
             ipid = np.where(np.asarray(sample_names)=="pair_id")[0]
@@ -49,12 +50,6 @@ def acdc_standardize_keys(descriptor, drop_pair_id=True):
                         new_samples[:,[i for i in range(len(block.samples.names)) if block.samples.names[i] != "pair_id"]])        
         else:
             new_samples = Labels(sample_names, np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names)) )
-        # drops pair_id which we don't need in this application
-        #if "pair_id" in sample_names:
-        #    new_samples = Labels( [n for n in sample_names if n!="pair_id"],
-        #                         np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names))[:,[i for i in range(len(block.samples.names)) if block.samples.names[i] != "pair_id"]])
-        #else:
-        new_samples = Labels(sample_names, np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names)) )
         blocks.append(
         TensorBlock( values=block.values, samples=new_samples,
                         components=block.components, 
