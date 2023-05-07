@@ -255,7 +255,7 @@ def cg_combine(
             OTHER_KEYS = other_keys_match + [ 
                 k+("_a" if k in other_keys_b else "") for k in other_keys_a if k not in other_keys_match ] + [
                 k+("_b" if k in other_keys_a else "") for k in other_keys_b if k not in other_keys_match ]  
-
+    
     if x_a.block(0).has_gradient("positions"):
         grad_components = x_a.block(0).gradient("positions").components
     else:
@@ -368,6 +368,7 @@ def cg_combine(
                         smp_b+=1
                     neighbor_slice = np.asarray(neighbor_slice)
     #                 print(index_a, index_b, neighbor_slice)#,  block_a.samples[neighbor_slice], block_b.samples)
+                    # print(len(samples_final), samples_final)
                     samples_final = Labels(["structure", "center", "neighbor_1", "neighbor_2"], np.asarray(samples_final, dtype=np.int32))                        
                 elif "neighbor_1" in samples_b.names: 
                     # combining three center feature with rho_{i i1 i2}

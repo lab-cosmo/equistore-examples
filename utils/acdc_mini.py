@@ -16,7 +16,7 @@ def _remove_suffix(names, new_suffix=""):
     return rname
 
 
-def acdc_standardize_keys(descriptor):
+def acdc_standardize_keys(descriptor, drop_pair_id=True):
     """ Standardize the naming scheme of density expansion coefficient blocks (nu=1) """
 
     key_names = np.array(descriptor.keys.names)
@@ -38,10 +38,15 @@ def acdc_standardize_keys(descriptor):
         keys.append(key)
         property_names = _remove_suffix(block.properties.names, "_1")
         sample_names = [ "center" if b == "first_atom" else ("neighbor" if b == "second_atom" else b) for b in block.samples.names ]
-        # drops pair_id which we don't need in this application
-        if "pair_id" in sample_names:
+        # converts pair_id to shifted neighbor numbers
+        if "pair_id" in sample_names and drop_pair_id:
+            new_samples = block.samples.view(dtype = np.int32).copy().reshape(-1,len(sample_names))
+            icent = np.where(np.asarray(sample_names)=="center")[0]
+            ineigh = np.where(np.asarray(sample_names)=="neighbor")[0]
+            ipid = np.where(np.asarray(sample_names)=="pair_id")[0]
+            new_samples[:,ineigh] += new_samples[:,ipid]*new_samples[:,icent].max()
             new_samples = Labels( [n for n in sample_names if n!="pair_id"],
-                                 np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names))[:,[i for i in range(len(block.samples.names)) if block.samples.names[i] != "pair_id"]])
+                        new_samples[:,[i for i in range(len(block.samples.names)) if block.samples.names[i] != "pair_id"]])        
         else:
             new_samples = Labels(sample_names, np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names)) )
         blocks.append(
