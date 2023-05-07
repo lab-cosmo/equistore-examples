@@ -38,7 +38,6 @@ def acdc_standardize_keys(descriptor, drop_pair_id=True):
         keys.append(key)
         property_names = _remove_suffix(block.properties.names, "_1")
         sample_names = [ "center" if b == "first_atom" else ("neighbor" if b == "second_atom" else b) for b in block.samples.names ]
-<<<<<<< HEAD
         # converts pair_id to shifted neighbor numbers
         if "pair_id" in sample_names and drop_pair_id:
             new_samples = block.samples.view(dtype = np.int32).copy().reshape(-1,len(sample_names))
