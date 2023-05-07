@@ -1,10 +1,9 @@
 import numpy as np
 from equistore import Labels, TensorBlock, TensorMap
 from itertools import product
-from utils.acdc_mini import acdc_standardize_keys, cg_increment, cg_combine, _remove_suffix
-from utils.clebsh_gordan import ClebschGordanReal
-from utils.librascal import  RascalSphericalExpansion, RascalPairExpansion
-from rascal.representations import SphericalExpansion
+from .acdc_mini import acdc_standardize_keys, cg_increment, cg_combine, _remove_suffix
+from .clebsh_gordan import ClebschGordanReal
+from rascaline import  SphericalExpansion, SphericalExpansionByPair
 
 def contract_three_center_property(Yii1i2, numpy = True):
     if len(Yii1i2.keys.dtype)>4: #i.e. not a standard acdc tensormap 
@@ -359,17 +358,29 @@ def cg_combine(
                             sc_b = samples_b[smp_b][["structure", "center"]]
                             idx = np.where( (samples_b[smp_b]["structure"] == samples_a["structure"] ) & 
                                            (samples_b[smp_b]["center"] == samples_a["center"] ))[0]
+
                             smp_a_idx = samples_a["neighbor"][idx].view(np.int32)
+                            if "pair_id" in block_a.samples.names:
+                                smp_a_idx = (samples_a["pair_id"][idx].view(np.int32), samples_a["neighbor"][idx].view(np.int32))
+                                smp_a_idx= [(smp_a_idx[0][i].view(np.int32), smp_a_idx[1][i].view(np.int32)) for i in range(len(smp_a_idx[0]))]
+                                #smp_a_idx = Labels(["pair_id", "neighbor"], np.array(x, dtype=np.int32))
                         neighbor_slice.extend(idx)    
                         b_slice.extend([smp_b]*len(idx))
                         #samples_final.extend(flatten(list(product([samples_b[smp_b]],smp_a_idx))))
                         #samples_final.extend(np.hstack([[tuple(samples_b[smp_b-1])]*8, smp_a_idx[:,np.newaxis] ]) )
-                        samples_final.extend([tuple(samples_b[smp_b]) + (idx,) for idx in smp_a_idx])
+                        #print(smp_a_idx, samples_b[smp_b])
+                        if "pair_id" in block_a.samples.names:
+                            samples_final.extend([tuple(samples_b[smp_b]) + idx for idx in smp_a_idx])
+                            #print(samples_final)
+                        else: 
+                            samples_final.extend([tuple(samples_b[smp_b]) + (idx,) for idx in smp_a_idx])
                         smp_b+=1
                     neighbor_slice = np.asarray(neighbor_slice)
-    #                 print(index_a, index_b, neighbor_slice)#,  block_a.samples[neighbor_slice], block_b.samples)
-                    # print(len(samples_final), samples_final)
-                    samples_final = Labels(["structure", "center", "neighbor_1", "neighbor_2"], np.asarray(samples_final, dtype=np.int32))                        
+                    if "pair_id" in block_a.samples.names and "pair_id" in block_b.samples.names:
+                        #print(np.asarray(samples_final).shape)
+                        samples_final = Labels(["structure", "pair_id1", "center", "neighbor_1", "pair_id2", "neighbor_2"], np.asarray(samples_final, dtype=np.int32))
+                    else:
+                        samples_final = Labels(["structure", "center", "neighbor_1", "neighbor_2"], np.asarray(samples_final, dtype=np.int32))                        
                 elif "neighbor_1" in samples_b.names: 
                     # combining three center feature with rho_{i i1 i2}
                     neighbor_slice = []

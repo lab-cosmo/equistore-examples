@@ -1,7 +1,7 @@
 import numpy as np
 import re
 from equistore import Labels, TensorBlock, TensorMap
-from utils.clebsh_gordan import ClebschGordanReal
+from .clebsh_gordan import ClebschGordanReal
 
 
 def _remove_suffix(names, new_suffix=""):
@@ -38,6 +38,7 @@ def acdc_standardize_keys(descriptor, drop_pair_id=True):
         keys.append(key)
         property_names = _remove_suffix(block.properties.names, "_1")
         sample_names = [ "center" if b == "first_atom" else ("neighbor" if b == "second_atom" else b) for b in block.samples.names ]
+<<<<<<< HEAD
         # converts pair_id to shifted neighbor numbers
         if "pair_id" in sample_names and drop_pair_id:
             new_samples = block.samples.view(dtype = np.int32).copy().reshape(-1,len(sample_names))
@@ -49,8 +50,14 @@ def acdc_standardize_keys(descriptor, drop_pair_id=True):
                         new_samples[:,[i for i in range(len(block.samples.names)) if block.samples.names[i] != "pair_id"]])        
         else:
             new_samples = Labels(sample_names, np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names)) )
+        # drops pair_id which we don't need in this application
+        #if "pair_id" in sample_names:
+        #    new_samples = Labels( [n for n in sample_names if n!="pair_id"],
+        #                         np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names))[:,[i for i in range(len(block.samples.names)) if block.samples.names[i] != "pair_id"]])
+        #else:
+        new_samples = Labels(sample_names, np.asarray(block.samples.view(dtype = np.int32)).reshape(-1,len(sample_names)) )
         blocks.append(
-            TensorBlock( values=block.values, samples=new_samples,
+        TensorBlock( values=block.values, samples=new_samples,
                         components=block.components, 
                          properties=Labels(property_names, np.asarray(block.properties.view(dtype = np.int32)).reshape(-1,len(property_names)) )
             ) )
